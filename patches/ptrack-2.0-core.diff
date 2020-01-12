@@ -1,0 +1,989 @@
+diff --git a/src/backend/commands/dbcommands.c b/src/backend/commands/dbcommands.c
+index 367c30adb01..7ab806622fb 100644
+--- a/src/backend/commands/dbcommands.c
++++ b/src/backend/commands/dbcommands.c
+@@ -57,6 +57,7 @@
+ #include "storage/lmgr.h"
+ #include "storage/md.h"
+ #include "storage/procarray.h"
++#include "storage/ptrack.h"
+ #include "storage/smgr.h"
+ #include "utils/acl.h"
+ #include "utils/builtins.h"
+@@ -659,6 +660,7 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
+ 			 * We don't need to copy subdirectories
+ 			 */
+ 			copydir(srcpath, dstpath, false);
++			ptrack_walkdir(dstpath, dboid, dsttablespace);
+ 
+ 			/* Record the filesystem change in XLOG */
+ 			{
+@@ -1305,6 +1307,7 @@ movedb(const char *dbname, const char *tblspcname)
+ 		 * Copy files from the old tablespace to the new one
+ 		 */
+ 		copydir(src_dbpath, dst_dbpath, false);
++		ptrack_walkdir(dst_dbpath, db_id, dst_tblspcoid);
+ 
+ 		/*
+ 		 * Record the filesystem change in XLOG
+@@ -2216,6 +2219,7 @@ dbase_redo(XLogReaderState *record)
+ 		 * We don't need to copy subdirectories
+ 		 */
+ 		copydir(src_path, dst_path, false);
++		ptrack_walkdir(dst_path, xlrec->db_id, xlrec->tablespace_id);
+ 	}
+ 	else if (info == XLOG_DBASE_DROP)
+ 	{
+diff --git a/src/backend/replication/basebackup.c b/src/backend/replication/basebackup.c
+index 1423e6cd1f8..1c8de70c275 100644
+--- a/src/backend/replication/basebackup.c
++++ b/src/backend/replication/basebackup.c
+@@ -36,6 +36,7 @@
+ #include "storage/dsm_impl.h"
+ #include "storage/fd.h"
+ #include "storage/ipc.h"
++#include "storage/ptrack.h"
+ #include "storage/reinit.h"
+ #include "utils/builtins.h"
+ #include "utils/ps_status.h"
+@@ -193,6 +194,10 @@ static const char *const excludeFiles[] =
+ 	"postmaster.pid",
+ 	"postmaster.opts",
+ 
++	"ptrack.map.mmap",
++	"ptrack.map",
++	"ptrack.map.tmp",
++
+ 	/* end of list */
+ 	NULL
+ };
+diff --git a/src/backend/storage/buffer/bufmgr.c b/src/backend/storage/buffer/bufmgr.c
+index aba39604811..be265e51c1c 100644
+--- a/src/backend/storage/buffer/bufmgr.c
++++ b/src/backend/storage/buffer/bufmgr.c
+@@ -689,7 +689,8 @@ ReadBufferWithoutRelcache(RelFileNode rnode, ForkNumber forkNum,
+ 
+ 	SMgrRelation smgr = smgropen(rnode, InvalidBackendId);
+ 
+-	Assert(InRecovery);
++	// XXX: required by ptrack
++	// Assert(InRecovery);
+ 
+ 	return ReadBuffer_common(smgr, RELPERSISTENCE_PERMANENT, forkNum, blockNum,
+ 							 mode, strategy, &hit);
+diff --git a/src/backend/storage/smgr/Makefile b/src/backend/storage/smgr/Makefile
+index 596b564656f..56cb1df7fb4 100644
+--- a/src/backend/storage/smgr/Makefile
++++ b/src/backend/storage/smgr/Makefile
+@@ -14,6 +14,7 @@ include $(top_builddir)/src/Makefile.global
+ 
+ OBJS = \
+ 	md.o \
+-	smgr.o
++	smgr.o \
++	ptrack.o
+ 
+ include $(top_srcdir)/src/backend/common.mk
+diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
+index 85b71154006..b43fd32a549 100644
+--- a/src/backend/storage/smgr/md.c
++++ b/src/backend/storage/smgr/md.c
+@@ -35,6 +35,7 @@
+ #include "storage/bufmgr.h"
+ #include "storage/fd.h"
+ #include "storage/md.h"
++#include "storage/ptrack.h"
+ #include "storage/relfilenode.h"
+ #include "storage/smgr.h"
+ #include "storage/sync.h"
+@@ -436,6 +437,8 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+ 		register_dirty_segment(reln, forknum, v);
+ 
+ 	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
++
++	ptrack_mark_block(reln->smgr_rnode, forknum, blocknum);
+ }
+ 
+ /*
+@@ -717,6 +720,8 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+ 
+ 	if (!skipFsync && !SmgrIsTemp(reln))
+ 		register_dirty_segment(reln, forknum, v);
++
++	ptrack_mark_block(reln->smgr_rnode, forknum, blocknum);
+ }
+ 
+ /*
+diff --git a/src/backend/storage/smgr/ptrack.c b/src/backend/storage/smgr/ptrack.c
+new file mode 100644
+index 00000000000..d3b75dfcc21
+--- /dev/null
++++ b/src/backend/storage/smgr/ptrack.c
+@@ -0,0 +1,655 @@
++/*-------------------------------------------------------------------------
++ *
++ * ptrack.c
++ *	  map for tracking updates of relation's pages
++ *
++ * IDENTIFICATION
++ *	  src/backend/storage/smgr/ptrack.c
++ *
++ * INTERFACE ROUTINES (PostgreSQL side)
++ *	  ptrackMapInit()          --- allocate new shared ptrack_map
++ *	  ptrackMapAttach()        --- attach to the existing ptrack_map
++ *	  assign_ptrack_map_size() --- ptrack_map_size GUC assign callback
++ *	  ptrack_walkdir()         --- walk directory and mark all blocks of all
++ *	                               data files in ptrack_map
++ *	  ptrack_mark_block()      --- mark single page in ptrack_map
++ *
++ *-------------------------------------------------------------------------
++ */
++
++#include "postgres.h"
++
++#include <unistd.h>
++#include <sys/stat.h>
++
++#ifndef WIN32
++#include "sys/mman.h"
++#endif
++
++#include "miscadmin.h"
++#include "funcapi.h"
++#include "access/hash.h"
++#include "access/table.h"
++#include "access/parallel.h"
++#include "access/xlog.h"
++#include "access/xlogutils.h"
++#include "access/skey.h"
++#include "access/genam.h"
++#include "access/generic_xlog.h"
++#include "access/htup_details.h"
++#include "catalog/pg_class.h"
++#include "catalog/pg_depend.h"
++#include "catalog/pg_tablespace.h"
++#include "nodes/makefuncs.h"
++#include "port/pg_crc32c.h"
++#include "storage/bufmgr.h"
++#include "storage/copydir.h"
++#include "storage/lmgr.h"
++#include "storage/ptrack.h"
++#include "storage/smgr.h"
++#include "storage/fd.h"
++#include "storage/bufmgr.h"
++#include "storage/md.h"
++#include "storage/reinit.h"
++#include "utils/inval.h"
++#include "utils/array.h"
++#include "utils/relfilenodemap.h"
++#include "utils/builtins.h"
++#include "utils/pg_lsn.h"
++#include "utils/lsyscache.h"
++
++PtrackMap ptrack_map = NULL;
++uint64 ptrack_map_size;
++
++static bool
++file_exists(const char *name)
++{
++	struct stat st;
++
++	AssertArg(name != NULL);
++
++	if (stat(name, &st) == 0)
++		return S_ISDIR(st.st_mode) ? false : true;
++	else if (!(errno == ENOENT || errno == ENOTDIR || errno == EACCES))
++		ereport(ERROR,
++				(errcode_for_file_access(),
++				 errmsg("could not access file \"%s\": %m", name)));
++
++	return false;
++}
++
++/* Delete ptrack file adn free the memory when ptrack is disabled.
++ *
++ * This is performed by postmaster at start or by checkpointer,,
++ * so that there are no concurrent delete issues.
++ */
++static void
++ptrackCleanFilesAndMap(void)
++{
++	char ptrack_path[MAXPGPATH];
++	char ptrack_mmap_path[MAXPGPATH];
++	char ptrack_path_tmp[MAXPGPATH];
++
++	sprintf(ptrack_path, "%s/%s", DataDir, PTRACK_PATH);
++	sprintf(ptrack_mmap_path, "%s/%s", DataDir, PTRACK_MMAP_PATH);
++	sprintf(ptrack_path_tmp, "%s/%s", DataDir, PTRACK_PATH_TMP);
++
++	elog(DEBUG1, "ptrackCleanFilesAndMap");
++
++	if (file_exists(ptrack_path_tmp))
++		durable_unlink(ptrack_path_tmp, LOG);
++
++	if (file_exists(ptrack_path))
++		durable_unlink(ptrack_path, LOG);
++
++	if (ptrack_map != NULL)
++	{
++#ifdef WIN32
++		if (!UnmapViewOfFile(ptrack_map))
++#else
++		if (!munmap(ptrack_map, sizeof(ptrack_map)))
++#endif
++			elog(LOG, "could not unmap ptrack_map");
++
++		ptrack_map = NULL;
++		if (file_exists(ptrack_mmap_path))
++			durable_unlink(ptrack_mmap_path, LOG);
++	}
++
++}
++
++/*
++ * Copy PTRACK_PATH file to special temporary file PTRACK_MMAP_PATH used for mmaping,
++ * or create new file, if there was no PTRACK_PATH file on disk.
++ *
++ * Mmap the content of PTRACK_MMAP_PATH file into memory structure 'ptrack_map'
++ */
++void
++ptrackMapInit(void)
++{
++	int			ptrack_fd;
++	pg_crc32c 	crc;
++	pg_crc32c	*file_crc;
++	char ptrack_path[MAXPGPATH];
++	char ptrack_mmap_path[MAXPGPATH];
++	struct stat stat_buf;
++	bool is_new_map = true;
++
++	elog(DEBUG1, "ptrackMapInit");
++
++	/* We do it at server start, so the map must be not allocated yet. */
++	Assert(ptrack_map == NULL);
++
++	/*Delete ptrack_map and all related files, if ptrack was switched off. */
++	if (ptrack_map_size == 0)
++	{
++		ptrackCleanFilesAndMap();
++		return;
++	}
++
++	sprintf(ptrack_path, "%s/%s", DataDir, PTRACK_PATH);
++	sprintf(ptrack_mmap_path, "%s/%s", DataDir, PTRACK_MMAP_PATH);
++
++	/* Remove old PTRACK_MMAP_PATH file, if exists */
++	if (file_exists(ptrack_mmap_path))
++		durable_unlink(ptrack_mmap_path, LOG);
++
++	if (stat(ptrack_path, &stat_buf) == 0 &&
++		stat_buf.st_size != ptrack_map_size)
++	{
++		elog(WARNING, "stat_buf.st_size != ptrack_map_size %zu != " UINT64_FORMAT,
++			(Size) stat_buf.st_size, ptrack_map_size);
++		durable_unlink(ptrack_path, LOG);
++	}
++
++	/*
++	 * If on-disk PTRACK_PATH file is present and has expected size,
++	 * copy it to read and restore state
++	 */
++	if (stat(ptrack_path, &stat_buf) == 0)
++	{
++		copy_file(ptrack_path, ptrack_mmap_path);
++		/* flag to check checksum */
++		is_new_map = false;
++		ptrack_fd = BasicOpenFile(ptrack_mmap_path, O_RDWR | PG_BINARY);
++		if (ptrack_fd < 0)
++			elog(ERROR, "Failed to open ptrack map file \"%s\": %m", ptrack_mmap_path);
++	}
++	else
++	{
++		/* Create new file for PTRACK_MMAP_PATH */
++		ptrack_fd = BasicOpenFile(ptrack_mmap_path, O_RDWR | O_CREAT | PG_BINARY);
++		if (ptrack_fd < 0)
++			elog(ERROR, "Failed to open ptrack map file \"%s\": %m", ptrack_mmap_path);
++	}
++
++#ifdef WIN32
++	{
++		HANDLE mh = CreateFileMapping((HANDLE) _get_osfhandle(ptrack_fd),
++									  NULL,
++									  PAGE_READWRITE,
++									  0,
++									  (DWORD) ptrack_map_size,
++									  NULL);
++		if (mh == NULL)
++			elog(ERROR, "Failed to create file mapping: %m");
++
++		ptrack_map = (PtrackMap) MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0);
++		if (ptrack_map == NULL)
++		{
++			CloseHandle(mh);
++			elog(ERROR, "Failed to mmap ptrack file: %m");
++		}
++	}
++#else
++	if (ftruncate(ptrack_fd, ptrack_map_size) < 0)
++		elog(ERROR, "Failed to truncate ptrack file: %m");
++
++	ptrack_map = (PtrackMap) mmap(NULL, ptrack_map_size,
++										 PROT_READ | PROT_WRITE, MAP_SHARED,
++										 ptrack_fd, 0);
++	if (ptrack_map == MAP_FAILED)
++			elog(ERROR, "Failed to mmap ptrack file: %m");
++#endif
++
++	if (!is_new_map)
++	{
++		/* Check CRC */
++		INIT_CRC32C(crc);
++		COMP_CRC32C(crc, (char *) ptrack_map, PtrackCrcOffset);
++		FIN_CRC32C(crc);
++
++		file_crc = (pg_crc32c *) ((char *) ptrack_map + PtrackCrcOffset);
++
++		elog(DEBUG1, "ptrackFileRead, crc %u, file_crc %u init_lsn %X/%X",
++			crc, *file_crc, (uint32) (ptrack_map->init_lsn >> 32), (uint32) ptrack_map->init_lsn);
++
++		/* TODO Handle this error. Probably we can just recreate the file */
++		if (!EQ_CRC32C(*file_crc, crc))
++		{
++			pg_atomic_write_u64((pg_atomic_uint64 *) &(ptrack_map->init_lsn), InvalidXLogRecPtr);
++			elog(ERROR, "incorrect checksum of file \"%s\"", ptrack_path);
++		}
++	}
++}
++
++/*
++ * Map must be already initialized by postmaster at start.
++ * mmap working copy of ptrack_map.
++ */
++void
++ptrackMapAttach(void)
++{
++	char ptrack_mmap_path[MAXPGPATH];
++	int			ptrack_fd;
++	struct stat stat_buf;
++
++	elog(DEBUG1, "ptrackMapAttach");
++
++	/* We do it at process start, so the map must be not allocated yet. */
++	Assert(ptrack_map == NULL);
++
++	if (ptrack_map_size == 0)
++		return;
++
++	sprintf(ptrack_mmap_path, "%s/%s", DataDir, PTRACK_MMAP_PATH);
++	if (!file_exists(ptrack_mmap_path))
++	{
++		elog(WARNING, "ptrackMapAttach(). '%s' file doesn't exist ", ptrack_mmap_path);
++		return;
++	}
++
++	if (stat(ptrack_mmap_path, &stat_buf) == 0 &&
++		stat_buf.st_size != ptrack_map_size)
++		elog(ERROR, "ptrack_map_size doesn't match size of the file \"%s\"", ptrack_mmap_path);
++
++
++	ptrack_fd = BasicOpenFile(ptrack_mmap_path, O_RDWR | PG_BINARY);
++	if (ptrack_fd < 0)
++		elog(ERROR, "Failed to open ptrack map file \"%s\": %m", ptrack_mmap_path);
++
++	elog(DEBUG1, "ptrackMapAttach before mmap");
++#ifdef WIN32
++	{
++		HANDLE mh = CreateFileMapping((HANDLE) _get_osfhandle(ptrack_fd),
++									  NULL,
++									  PAGE_READWRITE,
++									  0,
++									  (DWORD) ptrack_map_size,
++									  NULL);
++		if (mh == NULL)
++			elog(ERROR, "Failed to create file mapping: %m");
++
++		ptrack_map = (PtrackMap) MapViewOfFile(mh, FILE_MAP_ALL_ACCESS, 0, 0, 0);
++		if (ptrack_map == NULL)
++		{
++			CloseHandle(mh);
++			elog(ERROR, "Failed to mmap ptrack file: %m");
++		}
++	}
++#else
++	ptrack_map = (PtrackMap) mmap(NULL, ptrack_map_size,
++										 PROT_READ | PROT_WRITE, MAP_SHARED,
++										 ptrack_fd, 0);
++	if (ptrack_map == MAP_FAILED)
++			elog(ERROR, "Failed to mmap ptrack file: %m");
++#endif
++}
++
++/*
++ * Write content of ptrack_map to file.
++ */
++void
++ptrackCheckpoint(void)
++{
++	int			ptrack_tmp_fd;
++	pg_crc32c 	crc;
++	char ptrack_path[MAXPGPATH];
++	char ptrack_path_tmp[MAXPGPATH];
++	XLogRecPtr init_lsn;
++	XLogRecPtr buf[PTRACK_BUF_SIZE];
++	uint32 crc_buf[2];
++	struct stat stat_buf;
++	int i = 0;
++	int j = 0;
++
++	elog(DEBUG1, "ptrackCheckpoint");
++
++	/* Delete ptrack_map and all related files, if ptrack was switched off */
++	if (ptrack_map_size == 0)
++	{
++		ptrackCleanFilesAndMap();
++		return;
++	}
++	else if (ptrack_map == NULL)
++		elog(ERROR, "ptrack map is not loaded");
++
++	sprintf(ptrack_path_tmp, "%s/%s", DataDir, PTRACK_PATH_TMP);
++	sprintf(ptrack_path, "%s/%s", DataDir, PTRACK_PATH);
++
++	elog(DEBUG1, "ptrackCheckpoint() start");
++
++	/* map content is protected with CRC */
++	INIT_CRC32C(crc);
++
++	ptrack_tmp_fd = BasicOpenFile(ptrack_path_tmp,
++								  O_CREAT | O_TRUNC | O_WRONLY | PG_BINARY);
++
++	if (ptrack_tmp_fd < 0)
++		ereport(ERROR,
++				(errcode_for_file_access(),
++				 errmsg("could not create file \"%s\": %m", ptrack_path_tmp)));
++
++	/*
++	 * PtrackMapHdr only contains one XLogRecPtr (or uint64) value.
++	 * Copy it to the file.
++	 *
++	 * TODO: it seems that we do not need atomic read here and could
++	 * write the entire PtrackMap instead.
++	 */
++	init_lsn = pg_atomic_read_u64((pg_atomic_uint64 *) &(ptrack_map->init_lsn));
++
++	/* Set init_lsn during checkpoint if it is not set yet */
++	if (init_lsn == InvalidXLogRecPtr)
++	{
++		XLogRecPtr new_init_lsn;
++
++		if (RecoveryInProgress())
++			new_init_lsn = GetXLogReplayRecPtr(NULL);
++		else
++			new_init_lsn = GetXLogInsertRecPtr();
++
++		pg_atomic_write_u64((pg_atomic_uint64 *) &(ptrack_map->init_lsn), new_init_lsn);
++		init_lsn = new_init_lsn;
++	}
++
++	COMP_CRC32C(crc, (char *) &init_lsn, sizeof(init_lsn));
++	if (write(ptrack_tmp_fd, &init_lsn, sizeof(init_lsn)) != sizeof(init_lsn))
++	{
++		/* if write didn't set errno, assume problem is no disk space */
++		if (errno == 0)
++			errno = ENOSPC;
++		ereport(ERROR,
++				(errcode_for_file_access(),
++				 errmsg("could not write file \"%s\": %m", ptrack_path_tmp)));
++	}
++
++	/*
++	 * Iterate over ptrack map actual content and sync it to file.
++	 * It's essential to read each element atomically to avoid partial reads,
++	 * since map can be updated concurrently without any lock.
++	 */
++	while (i < PtrackContentNblocks)
++	{
++		buf[j] = pg_atomic_read_u64(&PtrackContent(ptrack_map)[i]);
++
++		i++;
++		j++;
++
++		if (j == PTRACK_BUF_SIZE)
++		{
++			int writesz = sizeof(buf);
++
++			COMP_CRC32C(crc, (char *) buf, writesz);
++			if (write(ptrack_tmp_fd, buf, writesz) != writesz)
++			{
++				/* if write didn't set errno, assume problem is no disk space */
++				if (errno == 0)
++					errno = ENOSPC;
++				ereport(ERROR,
++						(errcode_for_file_access(),
++						errmsg("could not write file \"%s\": %m", ptrack_path_tmp)));
++			}
++
++			elog(DEBUG1, "i %d, j %d, writesz %d PtrackContentNblocks " UINT64_FORMAT,
++							i, j, writesz, (uint64) PtrackContentNblocks);
++
++			j = 0;
++		}
++	}
++
++	/* Write if anythig left */
++	// TODO: check this i
++	if ((i + 1) % PTRACK_BUF_SIZE != 0)
++	{
++		int  writesz = sizeof(XLogRecPtr)*(j);
++
++		COMP_CRC32C(crc, (char *) buf, writesz);
++		if (write(ptrack_tmp_fd, buf, writesz) != writesz)
++		{
++			/* if write didn't set errno, assume problem is no disk space */
++			if (errno == 0)
++				errno = ENOSPC;
++			ereport(ERROR,
++					(errcode_for_file_access(),
++					errmsg("could not write file \"%s\": %m", ptrack_path_tmp)));
++		}
++
++		elog(DEBUG1, "Final i %d, j %d, writesz %d PtrackContentNblocks " UINT64_FORMAT,
++								i, j, writesz, (uint64) PtrackContentNblocks);
++
++	}
++
++	/* add 32bit padding before checksum */
++	crc_buf[0] = 0;
++	COMP_CRC32C(crc, (char *) crc_buf, sizeof(uint32));
++	FIN_CRC32C(crc);
++
++	crc_buf[1] = crc;
++
++	if (write(ptrack_tmp_fd, crc_buf, sizeof(crc_buf)) != sizeof(crc_buf))
++	{
++		/* if write didn't set errno, assume problem is no disk space */
++		if (errno == 0)
++			errno = ENOSPC;
++		ereport(ERROR,
++				(errcode_for_file_access(),
++				 errmsg("could not write file \"%s\": %m", ptrack_path_tmp)));
++	}
++
++	if (pg_fsync(ptrack_tmp_fd) != 0)
++		ereport(ERROR,
++				(errcode_for_file_access(),
++				 errmsg("could not fsync file \"%s\": %m", ptrack_path_tmp)));
++
++	if (close(ptrack_tmp_fd) != 0)
++		ereport(ERROR,
++				(errcode_for_file_access(),
++				 errmsg("could not close file \"%s\": %m", ptrack_path_tmp)));
++
++	/* And finally replace old file with the new one */
++	durable_rename(ptrack_path_tmp, ptrack_path, LOG);
++
++	/* sanity check */
++	if (stat(ptrack_path, &stat_buf) == 0 &&
++		stat_buf.st_size != ptrack_map_size)
++	{
++		elog(ERROR, "ptrackCheckpoint(). stat_buf.st_size != ptrack_map_size %zu != " UINT64_FORMAT,
++			(Size) stat_buf.st_size, ptrack_map_size);
++	}
++	elog(DEBUG1, "ptrackCheckpoint() completed");
++}
++
++void
++assign_ptrack_map_size(int newval, void *extra)
++{
++	elog(DEBUG1, "assign_ptrack_map_size, MyProc %d newval %d ptrack_map_size " UINT64_FORMAT,
++			MyProcPid, newval, ptrack_map_size);
++
++	if (newval != 0 && !XLogIsNeeded())
++		ereport(ERROR,
++			(errmsg("уou cannot use ptrack if wal_level is minimal "),
++			 errdetail("Either set wal_level to \"replica\" or higher, or turn off ptrack with \"ptrack_map_size=0\"")));
++
++	if (DataDir != NULL && !IsBootstrapProcessingMode() &&
++		!InitializingParallelWorker)
++	{
++		/* Always assign ptrack_map_size */
++		ptrack_map_size = newval*1024*1024;
++
++		/* Init map on postmaster start */
++		if (!IsUnderPostmaster)
++		{
++			elog(DEBUG1, "assign_ptrack_map_size, MyProc %d newval %d ptrack_map_size " UINT64_FORMAT,
++				MyProcPid, newval, ptrack_map_size);
++
++			if (ptrack_map == NULL)
++			{
++				elog(DEBUG1, "ptrack_map_size() do ptrackMapInit()");
++				ptrackMapInit();
++			}
++		}
++		else
++		{
++			elog(DEBUG1, "ptrack_map_size(). do ptrackMapAttach() MyProc %d ptrack_map_size " UINT64_FORMAT,
++				 MyProcPid, ptrack_map_size);
++			ptrackMapAttach();
++		}
++	}
++}
++
++
++/*
++ * Mark all blocks of the file in ptrack_map.
++ * For use in functions that copy directories bypassing buffer manager.
++ */
++static void
++ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
++				 const char *filepath, const char *filename)
++{
++	RelFileNodeBackend	rnode;
++	ForkNumber			forknum;
++	BlockNumber			blkno,
++						nblocks = 0;
++	struct stat			stat_buf;
++	int					oidchars;
++	char				oidbuf[OIDCHARS + 1];
++
++	/* do not track temporary relations */
++	if (looks_like_temp_rel_name(filename))
++		return;
++
++	/* mark of non-temporary relation */
++	rnode.backend = InvalidBackendId;
++
++	rnode.node.dbNode = dbOid;
++	rnode.node.spcNode = tablespaceOid;
++
++	if (!parse_filename_for_nontemp_relation(filename, &oidchars, &forknum))
++		return;
++
++
++	memcpy(oidbuf, filename, oidchars);
++	oidbuf[oidchars] = '\0';
++	rnode.node.relNode = atooid(oidbuf);
++
++	/* compute number of blocks based on file size */
++	if (stat(filepath, &stat_buf) == 0)
++		nblocks = stat_buf.st_size / BLCKSZ;
++
++	elog(DEBUG1, "ptrack_mark_file %s, nblocks %u rnode db %u spc %u rel %u, forknum %d",
++		 filepath, nblocks, rnode.node.dbNode, rnode.node.spcNode, rnode.node.relNode, forknum);
++	for (blkno = 0; blkno < nblocks; blkno++)
++		ptrack_mark_block(rnode, forknum, blkno);
++}
++
++/*
++ * Mark all files in the given directory in ptrack_map.
++ * For use in functions that copy directories bypassing buffer manager.
++ *
++ * TODO do we need to add process_symlinks?
++ */
++void
++ptrack_walkdir(const char *path, Oid dbOid, Oid tablespaceOid)
++{
++	DIR		   *dir;
++	struct dirent *de;
++
++	/* Do not walk during bootstrap and if ptrack is disabled */
++	if (ptrack_map_size == 0
++		|| DataDir == NULL
++		|| IsBootstrapProcessingMode()
++		|| InitializingParallelWorker)
++		return;
++
++	dir = AllocateDir(path);
++
++	while ((de = ReadDirExtended(dir, path, LOG)) != NULL)
++	{
++		char		subpath[MAXPGPATH * 2];
++		struct stat fst;
++		int			sret;
++
++		CHECK_FOR_INTERRUPTS();
++
++		if (strcmp(de->d_name, ".") == 0 ||
++			strcmp(de->d_name, "..") == 0)
++			continue;
++
++		snprintf(subpath, sizeof(subpath), "%s/%s", path, de->d_name);
++
++		sret = lstat(subpath, &fst);
++
++		if (sret < 0)
++		{
++			ereport(LOG,
++					(errcode_for_file_access(),
++					 errmsg("could not stat file \"%s\": %m", subpath)));
++			continue;
++		}
++
++		if (S_ISREG(fst.st_mode))
++			ptrack_mark_file(dbOid, tablespaceOid, subpath, de->d_name);
++		else if (S_ISDIR(fst.st_mode))
++			ptrack_walkdir(subpath, false, LOG);
++	}
++
++	FreeDir(dir);				/* we ignore any error here */
++}
++
++/*
++ * Mark modified block in ptrack_map.
++ */
++void ptrack_mark_block(RelFileNodeBackend smgr_rnode,
++					   ForkNumber forknum, BlockNumber blocknum)
++{
++	size_t hash;
++	XLogRecPtr new_lsn;
++	XLogRecPtr old_lsn;
++	XLogRecPtr old_init_lsn;
++	PtBlockId bid;
++
++	if (ptrack_map_size != 0 && (ptrack_map != NULL) &&
++		smgr_rnode.backend == InvalidBackendId) /* do not track temporary relations */
++	{
++		bid.relnode = smgr_rnode.node;
++		bid.forknum = forknum;
++		bid.blocknum = blocknum;
++		hash = BID_HASH_FUNC(bid);
++
++		if (RecoveryInProgress())
++			new_lsn = GetXLogReplayRecPtr(NULL);
++		else
++			new_lsn = GetXLogInsertRecPtr();
++
++		old_lsn = pg_atomic_read_u64(&PtrackContent(ptrack_map)[hash]);
++
++		/* Atomically assign new init LSN value */
++		old_init_lsn = pg_atomic_read_u64((pg_atomic_uint64 *) &(ptrack_map->init_lsn));
++
++		if (old_init_lsn == InvalidXLogRecPtr)
++		{
++			elog(DEBUG1, "ptrack_mark_block() init_lsn " UINT64_FORMAT " <- " UINT64_FORMAT, old_init_lsn , new_lsn);
++
++			while (old_init_lsn < new_lsn &&
++			   !pg_atomic_compare_exchange_u64((pg_atomic_uint64 *) &(ptrack_map->init_lsn), &old_init_lsn, new_lsn));
++		}
++
++		elog(DEBUG1, "ptrack_mark_block() map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, hash, old_lsn , new_lsn);
++
++		/* Atomically assign new LSN value */
++		while (old_lsn < new_lsn &&
++			!pg_atomic_compare_exchange_u64(&PtrackContent(ptrack_map)[hash], &old_lsn, new_lsn));
++		elog(DEBUG1, "ptrack_mark_block() map[%zu]=" UINT64_FORMAT, hash, pg_atomic_read_u64(&PtrackContent(ptrack_map)[hash]));
++	}
++}
+diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
+index 9cb7c650331..0d5840f09e1 100644
+--- a/src/backend/storage/sync/sync.c
++++ b/src/backend/storage/sync/sync.c
+@@ -28,6 +28,7 @@
+ #include "storage/bufmgr.h"
+ #include "storage/ipc.h"
+ #include "storage/md.h"
++#include "storage/ptrack.h"
+ #include "utils/hsearch.h"
+ #include "utils/inval.h"
+ #include "utils/memutils.h"
+@@ -418,6 +419,13 @@ ProcessSyncRequests(void)
+ 	CheckpointStats.ckpt_longest_sync = longest;
+ 	CheckpointStats.ckpt_agg_sync_time = total_elapsed;
+ 
++	/*
++	 * Flush ptrack file
++	 * TODO find proper place for this call,
++	 * so that we're sure that all needed changes are present in ptrack file
++	 */
++	ptrackCheckpoint();
++
+ 	/* Flag successful completion of ProcessSyncRequests */
+ 	sync_in_progress = false;
+ }
+diff --git a/src/backend/utils/misc/guc.c b/src/backend/utils/misc/guc.c
+index 62285792eca..a746dd03b51 100644
+--- a/src/backend/utils/misc/guc.c
++++ b/src/backend/utils/misc/guc.c
+@@ -78,6 +78,7 @@
+ #include "storage/pg_shmem.h"
+ #include "storage/predicate.h"
+ #include "storage/proc.h"
++#include "storage/ptrack.h"
+ #include "storage/standby.h"
+ #include "tcop/tcopprot.h"
+ #include "tsearch/ts_cache.h"
+@@ -589,6 +590,7 @@ static char *recovery_target_xid_string;
+ static char *recovery_target_name_string;
+ static char *recovery_target_lsn_string;
+ 
++static int ptrack_map_size_tmp;
+ 
+ /* should be static, but commands/variable.c needs to get at this */
+ char	   *role_string;
+@@ -1978,6 +1980,16 @@ static struct config_bool ConfigureNamesBool[] =
+ 
+ static struct config_int ConfigureNamesInt[] =
+ {
++	{
++		{"ptrack_map_size", PGC_POSTMASTER, RESOURCES_DISK,
++			gettext_noop("Size of ptrack map used for incremental backup: 0 disabled."),
++			NULL,
++			GUC_UNIT_MB
++		},
++		&ptrack_map_size_tmp,
++		0, 0, 1024,
++		NULL, assign_ptrack_map_size, NULL
++	},
+ 	{
+ 		{"archive_timeout", PGC_SIGHUP, WAL_ARCHIVING,
+ 			gettext_noop("Forces a switch to the next WAL file if a "
+diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
+index fd14844eecf..e735932db8a 100644
+--- a/src/bin/pg_rewind/filemap.c
++++ b/src/bin/pg_rewind/filemap.c
+@@ -102,6 +102,9 @@ static const char *excludeFiles[] =
+ 	"postmaster.pid",
+ 	"postmaster.opts",
+ 
++	"ptrack.map.mmap",
++	"ptrack.map",
++	"ptrack.map.tmp",
+ 	/* end of list */
+ 	NULL
+ };
+diff --git a/src/include/storage/ptrack.h b/src/include/storage/ptrack.h
+new file mode 100644
+index 00000000000..3dd504f1375
+--- /dev/null
++++ b/src/include/storage/ptrack.h
+@@ -0,0 +1,129 @@
++/*-------------------------------------------------------------------------
++ *
++ * ptrack.h
++ *	  header for ptrack map for tracking updates of relation's pages
++ *
++ *
++ * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
++ * Portions Copyright (c) 1994, Regents of the University of California
++ *
++ * src/include/storage/ptrack.h
++ *
++ *-------------------------------------------------------------------------
++ */
++#ifndef PTRACK_H
++#define PTRACK_H
++
++#include "access/xlogdefs.h"
++#include "storage/block.h"
++#include "storage/buf.h"
++#include "storage/relfilenode.h"
++#include "storage/smgr.h"
++#include "utils/relcache.h"
++
++/* Ptrack version as a string */
++#define PTRACK_VERSION "2.0"
++/* Ptrack version as a number */
++#define PTRACK_VERSION_NUM 200
++
++/* Working copy of ptrack.map */
++#define PTRACK_MMAP_PATH "global/ptrack.map.mmap"
++/* Persistent copy of ptrack.map to restore after crash */
++#define PTRACK_PATH "global/ptrack.map"
++/* Used for atomical crash-safe update of ptrack.map */
++#define PTRACK_PATH_TMP "global/ptrack.map.tmp"
++
++#define PTRACK_BUF_SIZE 1000
++
++/* header of ptrack map  */
++typedef struct PtrackMapHdr {
++	/*
++	 * Default value. Used for the map reset.
++	 * LSN of the moment, when map was last enabled
++	 */
++	XLogRecPtr	init_lsn;
++
++	/* Followed by the actual map of LSNs */
++	XLogRecPtr	entries[FLEXIBLE_ARRAY_MEMBER];
++} PtrackMapHdr;
++/* At the end of the map stored CRC of type pg_crc32c */
++
++typedef PtrackMapHdr *PtrackMap;
++
++/*
++ * Structure identifying block on the disk.
++ */
++typedef struct PtBlockId
++{
++	RelFileNode relnode;
++	ForkNumber	forknum;
++	BlockNumber blocknum;
++} PtBlockId;
++
++/*
++ * Context for pg_ptrack_get_pagemapset set returning function.
++ */
++typedef struct PtScanCtx
++{
++	XLogRecPtr	lsn;
++	PtBlockId	bid;
++	uint32		relsize;
++	char	   *relpath;
++	List	   *filelist;
++} PtScanCtx;
++
++/*
++ * List item type for ptrack data files list.
++ */
++typedef struct PtrackFileList_i {
++	RelFileNode relnode;
++	ForkNumber	forknum;
++	int			segno;
++	char	   *path;
++} PtrackFileList_i;
++
++// TODO: check MAXALIGN usage below
++/*
++ * Pointer to the actual map (LSN array) start
++ *
++ * Cast ptrack_map to char* to shift on exactly MAXALIGN(sizeof(PtrackMapHdr)) bytes
++ */
++#define PtrackContent(ptrack_map) \
++	((pg_atomic_uint64 *) (((char *) (ptrack_map)) + MAXALIGN(sizeof(PtrackMapHdr))))
++
++/* Actual size of ptrack_map (LSN array) excluding header and crc */
++#define PtrackContentSize \
++		(ptrack_map_size - MAXALIGN(sizeof(PtrackMapHdr)) - MAXALIGN(sizeof(pg_crc32c)))
++
++/* Number of elements in ptrack_map (LSN array)  */
++#define PtrackContentNblocks \
++		(PtrackContentSize / sizeof(XLogRecPtr))
++
++#define PtrackCrcOffset (ptrack_map_size - sizeof(pg_crc32c))
++
++/* Map block address 'bid' to map slot */
++#define BID_HASH_FUNC(bid) \
++		(size_t)(DatumGetUInt64(hash_any_extended((unsigned char *)&bid, sizeof(bid), 0)) % PtrackContentNblocks)
++
++/*
++ * Per process pointer to shared ptrack_map
++ */
++extern PGDLLIMPORT PtrackMap ptrack_map;
++
++/*
++ * Size of ptrack map in bytes
++ * TODO: to be protected by PtrackResizeLock?
++ */
++extern PGDLLIMPORT uint64 ptrack_map_size;
++
++extern void ptrackCheckpoint(void);
++extern void ptrackMapInit(void);
++extern void ptrackMapAttach(void);
++
++extern void assign_ptrack_map_size(int newval, void *extra);
++
++extern void ptrack_walkdir(const char *path, Oid dbOid, Oid tablespaceOid);
++extern void ptrack_mark_block(RelFileNodeBackend smgr_rnode,
++							  ForkNumber forkno, BlockNumber blkno);
++
++#endif   /* PTRACK_H */

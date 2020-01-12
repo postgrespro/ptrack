@@ -1,0 +1,5 @@
+# ptrack extension
+comment = 'public API for internal ptrack engine'
+default_version = '2.0'
+module_pathname = '$libdir/ptrack'
+relocatable = true
