@@ -1,16 +1,16 @@
 diff --git a/src/backend/commands/dbcommands.c b/src/backend/commands/dbcommands.c
-index 367c30adb01..7ab806622fb 100644
+index 863f89f19d2..8f3143758ab 100644
 --- a/src/backend/commands/dbcommands.c
 +++ b/src/backend/commands/dbcommands.c
-@@ -57,6 +57,7 @@
- #include "storage/lmgr.h"
+@@ -56,6 +56,7 @@
+ #include "storage/ipc.h"
  #include "storage/md.h"
  #include "storage/procarray.h"
 +#include "storage/ptrack.h"
  #include "storage/smgr.h"
  #include "utils/acl.h"
  #include "utils/builtins.h"
-@@ -659,6 +660,7 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
+@@ -638,6 +639,7 @@ createdb(ParseState *pstate, const CreatedbStmt *stmt)
  			 * We don't need to copy subdirectories
  			 */
  			copydir(srcpath, dstpath, false);
@@ -18,7 +18,7 @@ index 367c30adb01..7ab806622fb 100644
  
  			/* Record the filesystem change in XLOG */
  			{
-@@ -1305,6 +1307,7 @@ movedb(const char *dbname, const char *tblspcname)
+@@ -1276,6 +1278,7 @@ movedb(const char *dbname, const char *tblspcname)
  		 * Copy files from the old tablespace to the new one
  		 */
  		copydir(src_dbpath, dst_dbpath, false);
@@ -26,7 +26,7 @@ index 367c30adb01..7ab806622fb 100644
  
  		/*
  		 * Record the filesystem change in XLOG
-@@ -2216,6 +2219,7 @@ dbase_redo(XLogReaderState *record)
+@@ -2139,6 +2142,7 @@ dbase_redo(XLogReaderState *record)
  		 * We don't need to copy subdirectories
  		 */
  		copydir(src_path, dst_path, false);
@@ -35,7 +35,7 @@ index 367c30adb01..7ab806622fb 100644
  	else if (info == XLOG_DBASE_DROP)
  	{
 diff --git a/src/backend/replication/basebackup.c b/src/backend/replication/basebackup.c
-index 1423e6cd1f8..1c8de70c275 100644
+index a73893237a4..2a2e17fb33e 100644
 --- a/src/backend/replication/basebackup.c
 +++ b/src/backend/replication/basebackup.c
 @@ -36,6 +36,7 @@
@@ -46,7 +46,7 @@ index 1423e6cd1f8..1c8de70c275 100644
  #include "storage/reinit.h"
  #include "utils/builtins.h"
  #include "utils/ps_status.h"
-@@ -193,6 +194,10 @@ static const char *const excludeFiles[] =
+@@ -195,6 +196,10 @@ static const char *excludeFiles[] =
  	"postmaster.pid",
  	"postmaster.opts",
  
@@ -58,10 +58,10 @@ index 1423e6cd1f8..1c8de70c275 100644
  	NULL
  };
 diff --git a/src/backend/storage/buffer/bufmgr.c b/src/backend/storage/buffer/bufmgr.c
-index aba39604811..be265e51c1c 100644
+index 7332e6b5903..08693933e18 100644
 --- a/src/backend/storage/buffer/bufmgr.c
 +++ b/src/backend/storage/buffer/bufmgr.c
-@@ -689,7 +689,8 @@ ReadBufferWithoutRelcache(RelFileNode rnode, ForkNumber forkNum,
+@@ -688,7 +688,8 @@ ReadBufferWithoutRelcache(RelFileNode rnode, ForkNumber forkNum,
  
  	SMgrRelation smgr = smgropen(rnode, InvalidBackendId);
  
@@ -72,31 +72,30 @@ index aba39604811..be265e51c1c 100644
  	return ReadBuffer_common(smgr, RELPERSISTENCE_PERMANENT, forkNum, blockNum,
  							 mode, strategy, &hit);
 diff --git a/src/backend/storage/smgr/Makefile b/src/backend/storage/smgr/Makefile
-index 596b564656f..56cb1df7fb4 100644
+index e486b7c0d1c..3c8f15b1444 100644
 --- a/src/backend/storage/smgr/Makefile
 +++ b/src/backend/storage/smgr/Makefile
-@@ -14,6 +14,7 @@ include $(top_builddir)/src/Makefile.global
+@@ -12,6 +12,6 @@ subdir = src/backend/storage/smgr
+ top_builddir = ../../../..
+ include $(top_builddir)/src/Makefile.global
  
- OBJS = \
- 	md.o \
--	smgr.o
-+	smgr.o \
-+	ptrack.o
+-OBJS = md.o smgr.o
++OBJS = md.o smgr.o ptrack.o
  
  include $(top_srcdir)/src/backend/common.mk
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
-index 85b71154006..b43fd32a549 100644
+index 050cee5f9a9..94a7a1f7a1c 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
-@@ -35,6 +35,7 @@
- #include "storage/bufmgr.h"
+@@ -33,6 +33,7 @@
  #include "storage/fd.h"
+ #include "storage/bufmgr.h"
  #include "storage/md.h"
 +#include "storage/ptrack.h"
  #include "storage/relfilenode.h"
  #include "storage/smgr.h"
  #include "storage/sync.h"
-@@ -436,6 +437,8 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+@@ -422,6 +423,8 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  		register_dirty_segment(reln, forknum, v);
  
  	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
@@ -105,7 +104,7 @@ index 85b71154006..b43fd32a549 100644
  }
  
  /*
-@@ -717,6 +720,8 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+@@ -692,6 +695,8 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  
  	if (!skipFsync && !SmgrIsTemp(reln))
  		register_dirty_segment(reln, forknum, v);
@@ -116,7 +115,7 @@ index 85b71154006..b43fd32a549 100644
  /*
 diff --git a/src/backend/storage/smgr/ptrack.c b/src/backend/storage/smgr/ptrack.c
 new file mode 100644
-index 00000000000..d3b75dfcc21
+index 00000000000..b4e731cf652
 --- /dev/null
 +++ b/src/backend/storage/smgr/ptrack.c
 @@ -0,0 +1,655 @@
@@ -776,7 +775,7 @@ index 00000000000..d3b75dfcc21
 +	}
 +}
 diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
-index 9cb7c650331..0d5840f09e1 100644
+index 705f229b27f..87c5d4f965d 100644
 --- a/src/backend/storage/sync/sync.c
 +++ b/src/backend/storage/sync/sync.c
 @@ -28,6 +28,7 @@
@@ -785,8 +784,8 @@ index 9cb7c650331..0d5840f09e1 100644
  #include "storage/md.h"
 +#include "storage/ptrack.h"
  #include "utils/hsearch.h"
- #include "utils/inval.h"
  #include "utils/memutils.h"
+ #include "utils/inval.h"
 @@ -418,6 +419,13 @@ ProcessSyncRequests(void)
  	CheckpointStats.ckpt_longest_sync = longest;
  	CheckpointStats.ckpt_agg_sync_time = total_elapsed;
@@ -802,18 +801,19 @@ index 9cb7c650331..0d5840f09e1 100644
  	sync_in_progress = false;
  }
 diff --git a/src/backend/utils/misc/guc.c b/src/backend/utils/misc/guc.c
-index 62285792eca..a746dd03b51 100644
+index dc8f910ea46..74bda8275cd 100644
 --- a/src/backend/utils/misc/guc.c
 +++ b/src/backend/utils/misc/guc.c
-@@ -78,6 +78,7 @@
+@@ -78,6 +78,8 @@
  #include "storage/pg_shmem.h"
- #include "storage/predicate.h"
  #include "storage/proc.h"
+ #include "storage/predicate.h"
 +#include "storage/ptrack.h"
- #include "storage/standby.h"
++#include "storage/standby.h"
  #include "tcop/tcopprot.h"
  #include "tsearch/ts_cache.h"
-@@ -589,6 +590,7 @@ static char *recovery_target_xid_string;
+ #include "utils/builtins.h"
+@@ -581,6 +583,7 @@ static char *recovery_target_xid_string;
  static char *recovery_target_name_string;
  static char *recovery_target_lsn_string;
  
@@ -821,7 +821,7 @@ index 62285792eca..a746dd03b51 100644
  
  /* should be static, but commands/variable.c needs to get at this */
  char	   *role_string;
-@@ -1978,6 +1980,16 @@ static struct config_bool ConfigureNamesBool[] =
+@@ -1961,6 +1964,16 @@ static struct config_bool ConfigureNamesBool[] =
  
  static struct config_int ConfigureNamesInt[] =
  {
@@ -839,10 +839,10 @@ index 62285792eca..a746dd03b51 100644
  		{"archive_timeout", PGC_SIGHUP, WAL_ARCHIVING,
  			gettext_noop("Forces a switch to the next WAL file if a "
 diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
-index fd14844eecf..e735932db8a 100644
+index 601f7e9690e..f8bb8ff521f 100644
 --- a/src/bin/pg_rewind/filemap.c
 +++ b/src/bin/pg_rewind/filemap.c
-@@ -102,6 +102,9 @@ static const char *excludeFiles[] =
+@@ -103,6 +103,9 @@ static const char *excludeFiles[] =
  	"postmaster.pid",
  	"postmaster.opts",
  
@@ -854,7 +854,7 @@ index fd14844eecf..e735932db8a 100644
  };
 diff --git a/src/include/storage/ptrack.h b/src/include/storage/ptrack.h
 new file mode 100644
-index 00000000000..3dd504f1375
+index 00000000000..67c66913479
 --- /dev/null
 +++ b/src/include/storage/ptrack.h
 @@ -0,0 +1,129 @@

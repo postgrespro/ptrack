@@ -6,27 +6,33 @@ Ptrack is a fast block-level incremental backup engine for PostgreSQL. Currently
 
 ## Installation
 
-1) Apply PostgreSQL core patch:
+1) Get latest PostgreSQL sources:
 
 ```shell
-git apply patches/ptrack-2.0-core.diff
+git clone https://github.com/postgres/postgres.git -b REL_12_STABLE && cd postgres
 ```
 
-2) Compile and install PostgreSQL
+2) Apply PostgreSQL core patch:
 
-3) Set `ptrack_map_size` (in MB)
+```shell
+git apply ptrack/patches/ptrack-2.0-core.diff
+```
+
+3) Compile and install PostgreSQL
+
+4) Set `ptrack_map_size` (in MB)
 
 ```shell
 echo 'ptrack_map_size = 64' >> postgres_data/postgresql.conf
 ```
 
-4) Compile and install `ptrack` extension
+5) Compile and install `ptrack` extension
 
 ```shell
 USE_PGXS=1 make -C /path/to/ptrack/ install
 ```
 
-5) Run PostgreSQL and create `ptrack` extension
+6) Run PostgreSQL and create `ptrack` extension
 
 ```sql
 CREATE EXTENSION ptrack;
