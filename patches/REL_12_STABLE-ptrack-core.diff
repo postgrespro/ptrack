@@ -1,5 +1,5 @@
 diff --git a/src/backend/commands/dbcommands.c b/src/backend/commands/dbcommands.c
-index 863f89f19d2..8f3143758ab 100644
+index 863f89f19d..8f3143758a 100644
 --- a/src/backend/commands/dbcommands.c
 +++ b/src/backend/commands/dbcommands.c
 @@ -56,6 +56,7 @@
@@ -35,7 +35,7 @@ index 863f89f19d2..8f3143758ab 100644
  	else if (info == XLOG_DBASE_DROP)
  	{
 diff --git a/src/backend/replication/basebackup.c b/src/backend/replication/basebackup.c
-index a73893237a4..2a2e17fb33e 100644
+index 3bc26568eb..c27df92d53 100644
 --- a/src/backend/replication/basebackup.c
 +++ b/src/backend/replication/basebackup.c
 @@ -36,6 +36,7 @@
@@ -46,19 +46,19 @@ index a73893237a4..2a2e17fb33e 100644
  #include "storage/reinit.h"
  #include "utils/builtins.h"
  #include "utils/ps_status.h"
-@@ -195,6 +196,10 @@ static const char *excludeFiles[] =
- 	"postmaster.pid",
- 	"postmaster.opts",
+@@ -210,6 +211,10 @@ static const struct exclude_list_item excludeFiles[] =
+ 	{"postmaster.pid", false},
+ 	{"postmaster.opts", false},
  
-+	"ptrack.map.mmap",
-+	"ptrack.map",
-+	"ptrack.map.tmp",
++	{"ptrack.map.mmap", false},
++	{"ptrack.map", false},
++	{"ptrack.map.tmp", false},
 +
  	/* end of list */
- 	NULL
+ 	{NULL, false}
  };
 diff --git a/src/backend/storage/buffer/bufmgr.c b/src/backend/storage/buffer/bufmgr.c
-index 7332e6b5903..08693933e18 100644
+index 7332e6b590..08693933e1 100644
 --- a/src/backend/storage/buffer/bufmgr.c
 +++ b/src/backend/storage/buffer/bufmgr.c
 @@ -688,7 +688,8 @@ ReadBufferWithoutRelcache(RelFileNode rnode, ForkNumber forkNum,
@@ -72,7 +72,7 @@ index 7332e6b5903..08693933e18 100644
  	return ReadBuffer_common(smgr, RELPERSISTENCE_PERMANENT, forkNum, blockNum,
  							 mode, strategy, &hit);
 diff --git a/src/backend/storage/smgr/Makefile b/src/backend/storage/smgr/Makefile
-index e486b7c0d1c..3c8f15b1444 100644
+index e486b7c0d1..3c8f15b144 100644
 --- a/src/backend/storage/smgr/Makefile
 +++ b/src/backend/storage/smgr/Makefile
 @@ -12,6 +12,6 @@ subdir = src/backend/storage/smgr
@@ -84,7 +84,7 @@ index e486b7c0d1c..3c8f15b1444 100644
  
  include $(top_srcdir)/src/backend/common.mk
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
-index 050cee5f9a9..94a7a1f7a1c 100644
+index 050cee5f9a..94a7a1f7a1 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
 @@ -33,6 +33,7 @@
@@ -115,7 +115,7 @@ index 050cee5f9a9..94a7a1f7a1c 100644
  /*
 diff --git a/src/backend/storage/smgr/ptrack.c b/src/backend/storage/smgr/ptrack.c
 new file mode 100644
-index 00000000000..b4e731cf652
+index 0000000000..b4e731cf65
 --- /dev/null
 +++ b/src/backend/storage/smgr/ptrack.c
 @@ -0,0 +1,655 @@
@@ -775,7 +775,7 @@ index 00000000000..b4e731cf652
 +	}
 +}
 diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
-index 705f229b27f..87c5d4f965d 100644
+index 705f229b27..87c5d4f965 100644
 --- a/src/backend/storage/sync/sync.c
 +++ b/src/backend/storage/sync/sync.c
 @@ -28,6 +28,7 @@
@@ -801,7 +801,7 @@ index 705f229b27f..87c5d4f965d 100644
  	sync_in_progress = false;
  }
 diff --git a/src/backend/utils/misc/guc.c b/src/backend/utils/misc/guc.c
-index dc8f910ea46..74bda8275cd 100644
+index a70e79c489..371effeb2c 100644
 --- a/src/backend/utils/misc/guc.c
 +++ b/src/backend/utils/misc/guc.c
 @@ -78,6 +78,8 @@
@@ -839,22 +839,22 @@ index dc8f910ea46..74bda8275cd 100644
  		{"archive_timeout", PGC_SIGHUP, WAL_ARCHIVING,
  			gettext_noop("Forces a switch to the next WAL file if a "
 diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
-index 601f7e9690e..f8bb8ff521f 100644
+index 56f83d2fb2..b0912f7dd0 100644
 --- a/src/bin/pg_rewind/filemap.c
 +++ b/src/bin/pg_rewind/filemap.c
-@@ -103,6 +103,9 @@ static const char *excludeFiles[] =
- 	"postmaster.pid",
- 	"postmaster.opts",
+@@ -117,6 +117,9 @@ static const struct exclude_list_item excludeFiles[] =
+ 	{"postmaster.pid", false},
+ 	{"postmaster.opts", false},
  
-+	"ptrack.map.mmap",
-+	"ptrack.map",
-+	"ptrack.map.tmp",
++	{"ptrack.map.mmap", false},
++	{"ptrack.map", false},
++	{"ptrack.map.tmp", false},
  	/* end of list */
- 	NULL
+ 	{NULL, false}
  };
 diff --git a/src/include/storage/ptrack.h b/src/include/storage/ptrack.h
 new file mode 100644
-index 00000000000..67c66913479
+index 0000000000..67c6691347
 --- /dev/null
 +++ b/src/include/storage/ptrack.h
 @@ -0,0 +1,129 @@
