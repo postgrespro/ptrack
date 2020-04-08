@@ -2,7 +2,7 @@
 
 ## Overview
 
-Ptrack is a fast block-level incremental backup engine for PostgreSQL. Currently `ptrack` codebase is split approximately 50%/50% between PostgreSQL core patch and extension. All public SQL API methods are placed in the `ptrack` extension, while the main engine is still in core.
+Ptrack is a fast block-level incremental backup engine for PostgreSQL. Currently `ptrack` codebase is split approximately 50/50% between PostgreSQL core patch and extension. All public SQL API methods are placed in the `ptrack` extension, while the main engine is still in core.
 
 ## Installation
 
