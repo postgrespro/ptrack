@@ -1,0 +1,33 @@
+os: linux
+
+dist: bionic
+
+language: c
+
+services:
+    - docker
+
+before_install:
+    - cp travis/* .
+
+install:
+    - ./make_dockerfile.sh
+    - docker-compose build
+
+script:
+    - docker-compose run tests
+    # - docker-compose run $(bash <(curl -s https://codecov.io/env)) tests
+    # - docker run -v $(pwd):/tests --rm centos:7 /tests/travis/backup_restore.sh
+
+notifications:
+    email:
+        on_success: change
+        on_failure: always
+
+# Default MODE is basic, i.e. all tests with PG_PROBACKUP_TEST_BASIC=ON
+env:
+    - PG_VERSION=12 PG_BRANCH=REL_12_STABLE
+
+jobs:
+    allow_failures:
+        - if: env(MODE) IN (archive, backup, delta, locking, merge, replica, retention, restore)
