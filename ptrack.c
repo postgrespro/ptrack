@@ -1,30 +1,26 @@
 /*
  * ptrack.c
- *		Public API for in-core ptrack engine
+ *		Block level incremental backup engine
  *
  * Copyright (c) 2019-2020, Postgres Professional
  *
  * IDENTIFICATION
- *	  contrib/ptrack/ptrack.c
- */
-
-/*
- * #############################################################
- * #  _____ _______ _____            _____ _  __  ___    ___   #
- * # |  __ \__   __|  __ \     /\   / ____| |/ / |__ \  / _ \  #
- * # | |__) | | |  | |__) |   /  \ | |    | ' /     ) || | | | #
- * # |  ___/  | |  |  _  /   / /\ \| |    |  <     / / | | | | #
- * # | |      | |  | | \ \  / ____ \ |____| . \   / /_ | |_| | #
- * # |_|      |_|  |_|  \_\/_/    \_\_____|_|\_\ |____(_)___/  #
- * #############################################################
+ *	  ptrack/ptrack.c
  *
- * Currently ptrack 2.0 has following public API methods:
+ * INTERFACE ROUTINES (PostgreSQL side)
+ *	  ptrackMapInit()          --- allocate new shared ptrack_map
+ *	  ptrackMapAttach()        --- attach to the existing ptrack_map
+ *	  assign_ptrack_map_size() --- ptrack_map_size GUC assign callback
+ *	  ptrack_walkdir()         --- walk directory and mark all blocks of all
+ *	                               data files in ptrack_map
+ *	  ptrack_mark_block()      --- mark single page in ptrack_map
+ *
+ * Currently ptrack has following public API methods:
  *
  * # ptrack_version                  --- returns ptrack version string (2.0 currently).
- * # pg_ptrack_get_pagemapset('LSN') --- returns a set of changed data files with
+ * # ptrack_get_pagemapset('LSN')    --- returns a set of changed data files with
  * 										 bitmaps of changed blocks since specified LSN.
- * # pg_ptrack_control_lsn           --- returns LSN of the last ptrack map initialization.
- * # pg_ptrack_get_block             --- returns a spicific block of relation.
+ * # ptrack_init_lsn                 --- returns LSN of the last ptrack map initialization.
  *
  */
 
@@ -33,26 +29,46 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+#include "catalog/pg_tablespace.h"
+#include "catalog/pg_type.h"
 #include "funcapi.h"
 #include "miscadmin.h"
-#include "access/hash.h"
-#include "access/skey.h"
-#include "catalog/pg_type.h"
-#include "catalog/pg_tablespace.h"
+#include "nodes/pg_list.h"
+#include "storage/copydir.h"
 #include "storage/lmgr.h"
-#include "storage/ptrack.h"
+#include "storage/md.h"
 #include "storage/reinit.h"
 #include "utils/builtins.h"
+#include "utils/guc.h"
 #include "utils/pg_lsn.h"
-#include "nodes/pg_list.h"
+
+#include "datapagemap.h"
+#include "engine.h"
+#include "ptrack.h"
 
 PG_MODULE_MAGIC;
 
-void _PG_init(void);
-void _PG_fini(void);
+PtrackMap	ptrack_map = NULL;
+uint64		ptrack_map_size;
+int			ptrack_map_size_tmp;
+
+static copydir_hook_type prev_copydir_hook = NULL;
+static mdwrite_hook_type prev_mdwrite_hook = NULL;
+static mdextend_hook_type prev_mdextend_hook = NULL;
+static ProcessSyncRequests_hook_type prev_ProcessSyncRequests_hook = NULL;
+
+void		_PG_init(void);
+void		_PG_fini(void);
+
+static void ptrack_copydir_hook(const char *path);
+static void ptrack_mdwrite_hook(RelFileNodeBackend smgr_rnode,
+								ForkNumber forkno, BlockNumber blkno);
+static void ptrack_mdextend_hook(RelFileNodeBackend smgr_rnode,
+								 ForkNumber forkno, BlockNumber blkno);
+static void ptrack_ProcessSyncRequests_hook(void);
 
 static void ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid);
-static int ptrack_filelist_getnext(PtScanCtx *ctx);
+static int	ptrack_filelist_getnext(PtScanCtx * ctx);
 
 /*
  * Module load callback
@@ -60,7 +76,35 @@ static int ptrack_filelist_getnext(PtScanCtx *ctx);
 void
 _PG_init(void)
 {
+	if (!process_shared_preload_libraries_in_progress)
+		elog(ERROR, "ptrack module must be initialized by Postmaster. "
+			 "Put the following line to configuration file: "
+			 "shared_preload_libraries='ptrack'");
 
+	/*
+	 * Define (or redefine) custom GUC variables.
+	 */
+	DefineCustomIntVariable("ptrack.map_size",
+							"Sets the size of ptrack map in MB used for incremental backup (0 disabled).",
+							NULL,
+							&ptrack_map_size_tmp,
+							0,
+							0, INT_MAX,
+							PGC_POSTMASTER,
+							0,
+							NULL,
+							assign_ptrack_map_size,
+							NULL);
+
+	/* Install hooks */
+	prev_copydir_hook = copydir_hook;
+	copydir_hook = ptrack_copydir_hook;
+	prev_mdwrite_hook = mdwrite_hook;
+	mdwrite_hook = ptrack_mdwrite_hook;
+	prev_mdextend_hook = mdextend_hook;
+	mdextend_hook = ptrack_mdextend_hook;
+	prev_ProcessSyncRequests_hook = ProcessSyncRequests_hook;
+	ProcessSyncRequests_hook = ptrack_ProcessSyncRequests_hook;
 }
 
 /*
@@ -69,66 +113,90 @@ _PG_init(void)
 void
 _PG_fini(void)
 {
-
+	/* Uninstall hooks */
+	copydir_hook = prev_copydir_hook;
+	mdwrite_hook = prev_mdwrite_hook;
+	mdextend_hook = prev_mdextend_hook;
+	ProcessSyncRequests_hook = prev_ProcessSyncRequests_hook;
 }
 
-/********************************************************************/
-/* Datapage bitmapping structures and routines taken from pg_rewind */
-/* TODO: consider moving to another location */
-struct datapagemap
-{
-	char	   *bitmap;
-	int			bitmapsize;
-};
-typedef struct datapagemap datapagemap_t;
-
-struct datapagemap_iterator
-{
-	datapagemap_t *map;
-	BlockNumber nextblkno;
-};
-typedef struct datapagemap_iterator datapagemap_iterator_t;
-static void datapagemap_add(datapagemap_t *map, BlockNumber blkno);
-
+/*
+ * Ptrack follow up for copydir() routine.  It parses database OID
+ * and tablespace OID from path string.  We do not need to recoursively
+ * walk subdirs here, copydir() will do it for us if needed.
+ */
 static void
-datapagemap_add(datapagemap_t *map, BlockNumber blkno)
+ptrack_copydir_hook(const char *path)
 {
-	int			offset;
-	int			bitno;
+	Oid			spcOid = InvalidOid;
+	Oid			dbOid = InvalidOid;
+	int			oidchars;
+	char		oidbuf[OIDCHARS + 1];
 
-	offset = blkno / 8;
-	bitno = blkno % 8;
+	elog(DEBUG1, "ptrack_copydir_hook: path %s", path);
 
-	/* enlarge or create bitmap if needed */
-	if (map->bitmapsize <= offset)
+	if (strstr(path, "global/") == path)
+		spcOid = GLOBALTABLESPACE_OID;
+	else if (strstr(path, "base/") == path)
 	{
-		int			oldsize = map->bitmapsize;
-		int			newsize;
+		spcOid = DEFAULTTABLESPACE_OID;
+		oidchars = strspn(path + 5, "0123456789");
+		strncpy(oidbuf, path + 5, oidchars);
+		oidbuf[oidchars] = '\0';
+		dbOid = atooid(oidbuf);
+	}
+	else if (strstr(path, "pg_tblspc/") == path)
+	{
+		char	   *dbPos;
 
-		/*
-		 * The minimum to hold the new bit is offset + 1. But add some
-		 * headroom, so that we don't need to repeatedly enlarge the bitmap in
-		 * the common case that blocks are modified in order, from beginning
-		 * of a relation to the end.
-		 */
-		newsize = offset + 1;
-		newsize += 10;
+		oidchars = strspn(path + 10, "0123456789");
+		strncpy(oidbuf, path + 10, oidchars);
+		oidbuf[oidchars] = '\0';
+		spcOid = atooid(oidbuf);
 
-		if (map->bitmap != NULL)
-			map->bitmap = repalloc(map->bitmap, newsize);
-		else
-			map->bitmap = palloc(newsize);
-
-		/* zero out the newly allocated region */
-		memset(&map->bitmap[oldsize], 0, newsize - oldsize);
-
-		map->bitmapsize = newsize;
+		dbPos = strstr(path, TABLESPACE_VERSION_DIRECTORY) + strlen(TABLESPACE_VERSION_DIRECTORY) + 1;
+		oidchars = strspn(dbPos, "0123456789");
+		strncpy(oidbuf, dbPos, oidchars);
+		oidbuf[oidchars] = '\0';
+		dbOid = atooid(oidbuf);
 	}
 
-	/* Set the bit */
-	map->bitmap[offset] |= (1 << bitno);
+	elog(DEBUG1, "ptrack_copydir_hook: spcOid %u, dbOid %u", spcOid, dbOid);
+
+	ptrack_walkdir(path, spcOid, dbOid);
+
+	if (prev_copydir_hook)
+		prev_copydir_hook(path);
 }
-/********************************************************************/
+
+static void
+ptrack_mdwrite_hook(RelFileNodeBackend smgr_rnode,
+					ForkNumber forknum, BlockNumber blocknum)
+{
+	ptrack_mark_block(smgr_rnode, forknum, blocknum);
+
+	if (prev_mdwrite_hook)
+		prev_mdwrite_hook(smgr_rnode, forknum, blocknum);
+}
+
+static void
+ptrack_mdextend_hook(RelFileNodeBackend smgr_rnode,
+					 ForkNumber forknum, BlockNumber blocknum)
+{
+	ptrack_mark_block(smgr_rnode, forknum, blocknum);
+
+	if (prev_mdextend_hook)
+		prev_mdextend_hook(smgr_rnode, forknum, blocknum);
+}
+
+static void
+ptrack_ProcessSyncRequests_hook()
+{
+	ptrackCheckpoint();
+
+	if (prev_ProcessSyncRequests_hook)
+		prev_ProcessSyncRequests_hook();
+}
 
 /*
  * Recursively walk through the path and add all data files to filelist.
@@ -136,7 +204,7 @@ datapagemap_add(datapagemap_t *map, BlockNumber blkno)
 static void
 ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 {
-	DIR			  *dir;
+	DIR		   *dir;
 	struct dirent *de;
 
 	dir = AllocateDir(path);
@@ -162,7 +230,7 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 		{
 			ereport(LOG,
 					(errcode_for_file_access(),
-					 errmsg("could not stat file \"%s\": %m", subpath)));
+					 errmsg("ptrack: could not stat file \"%s\": %m", subpath)));
 			continue;
 		}
 
@@ -171,9 +239,9 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 			/* Regular file inside database directory, otherwise skip it */
 			if (dbOid != InvalidOid || spcOid == GLOBALTABLESPACE_OID)
 			{
-				int		oidchars;
-				char	oidbuf[OIDCHARS + 1];
-				char   *segpath;
+				int			oidchars;
+				char		oidbuf[OIDCHARS + 1];
+				char	   *segpath;
 				PtrackFileList_i *pfl = palloc0(sizeof(PtrackFileList_i));
 
 				/*
@@ -200,7 +268,9 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 											pfl->relnode.relNode, InvalidBackendId, pfl->forknum);
 
 				*filelist = lappend(*filelist, pfl);
-				// elog(WARNING, "added file %s of rel %u to ptrack list", pfl->path, pfl->relnode.relNode);
+
+				elog(DEBUG3, "ptrack: added file %s of rel %u to file list",
+					 pfl->path, pfl->relnode.relNode);
 			}
 		}
 		else if (S_ISDIR(fst.st_mode))
@@ -211,29 +281,32 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 			else if (spcOid != InvalidOid && strcmp(de->d_name, TABLESPACE_VERSION_DIRECTORY) == 0)
 				ptrack_gather_filelist(filelist, subpath, spcOid, InvalidOid);
 		}
-		// TODO: is it enough to properly check symlink support?
+		/* TODO: is it enough to properly check symlink support? */
 #ifndef WIN32
 		else if (S_ISLNK(fst.st_mode))
 #else
 		else if (pgwin32_is_junction(subpath))
 #endif
 		{
-			/* We expect that symlinks with only digits in the name to be tablespaces */
+			/*
+			 * We expect that symlinks with only digits in the name to be
+			 * tablespaces
+			 */
 			if (strspn(de->d_name + 1, "0123456789") == strlen(de->d_name + 1))
 				ptrack_gather_filelist(filelist, subpath, atooid(de->d_name), InvalidOid);
 		}
 	}
 
-	FreeDir(dir); /* we ignore any error here */
+	FreeDir(dir);				/* we ignore any error here */
 }
 
 static int
-ptrack_filelist_getnext(PtScanCtx *ctx)
+ptrack_filelist_getnext(PtScanCtx * ctx)
 {
-	PtrackFileList_i   *pfl = NULL;
-	ListCell		   *cell;
-	char			   *fullpath;
-	struct stat			fst;
+	PtrackFileList_i *pfl = NULL;
+	ListCell   *cell;
+	char	   *fullpath;
+	struct stat fst;
 
 	/* No more file in the list */
 	if (list_length(ctx->filelist) == 0)
@@ -266,7 +339,7 @@ ptrack_filelist_getnext(PtScanCtx *ctx)
 
 	if (stat(fullpath, &fst) != 0)
 	{
-		elog(WARNING, "cannot stat file %s", fullpath);
+		elog(WARNING, "ptrack: cannot stat file %s", fullpath);
 
 		/* But try the next one */
 		return ptrack_filelist_getnext(ctx);
@@ -281,7 +354,7 @@ ptrack_filelist_getnext(PtScanCtx *ctx)
 		/* Estimate relsize as size of first segment in blocks */
 		ctx->relsize = fst.st_size / BLCKSZ;
 
-	elog(DEBUG3, "got file %s with size %u from the ptrack list", pfl->path, ctx->relsize);
+	elog(DEBUG3, "ptrack: got file %s with size %u from the file list", pfl->path, ctx->relsize);
 
 	return 0;
 }
@@ -299,83 +372,35 @@ ptrack_version(PG_FUNCTION_ARGS)
 /*
  * Function to get last ptrack map initialization LSN.
  */
-PG_FUNCTION_INFO_V1(pg_ptrack_control_lsn);
+PG_FUNCTION_INFO_V1(ptrack_init_lsn);
 Datum
-pg_ptrack_control_lsn(PG_FUNCTION_ARGS)
+ptrack_init_lsn(PG_FUNCTION_ARGS)
 {
+	XLogRecPtr	init_lsn = pg_atomic_read_u64(&ptrack_map->init_lsn);
+
 	if (ptrack_map != NULL)
-		PG_RETURN_LSN(ptrack_map->init_lsn);
+		PG_RETURN_LSN(init_lsn);
 	else
 	{
-		elog(DEBUG1, "pg_ptrack_control_lsn(). no ptrack_map");
+		elog(WARNING, "ptrack is disabled");
 		PG_RETURN_LSN(InvalidXLogRecPtr);
 	}
-}
-
-/*
- * Function to retrieve blocks via buffercache.
- */
-PG_FUNCTION_INFO_V1(pg_ptrack_get_block);
-Datum
-pg_ptrack_get_block(PG_FUNCTION_ARGS)
-{
-	Oid			tablespace_oid = PG_GETARG_OID(0);
-	Oid			db_oid = PG_GETARG_OID(1);
-	Oid			relfilenode = PG_GETARG_OID(2);
-	BlockNumber blkno = PG_GETARG_UINT32(3);
-	bytea	   *raw_page;
-	char	   *raw_page_data;
-	Buffer		buf;
-	RelFileNode rnode;
-	BlockNumber nblocks;
-	SMgrRelation smgr;
-
-	rnode.dbNode = db_oid;
-	rnode.spcNode = tablespace_oid;
-	rnode.relNode = relfilenode;
-
-	elog(DEBUG1, "pg_ptrack_get_block(%i, %i, %i, %u)",
-		 tablespace_oid, db_oid, relfilenode, blkno);
-	smgr = smgropen(rnode, InvalidBackendId);
-	nblocks = smgrnblocks(smgr, MAIN_FORKNUM);
-
-	if (blkno >= nblocks)
-		PG_RETURN_NULL();
-
-	/* Initialize buffer to copy to */
-	raw_page = (bytea *) palloc0(BLCKSZ + VARHDRSZ);
-	SET_VARSIZE(raw_page, BLCKSZ + VARHDRSZ);
-	raw_page_data = VARDATA(raw_page);
-
-	buf = ReadBufferWithoutRelcache(rnode, MAIN_FORKNUM, blkno, RBM_NORMAL, NULL);
-
-	if (buf == InvalidBuffer)
-		elog(ERROR, "Block is not found in the buffer cache");
-
-	LockBuffer(buf, BUFFER_LOCK_SHARE);
-
-	memcpy(raw_page_data, BufferGetPage(buf), BLCKSZ);
-
-	LockBuffer(buf, BUFFER_LOCK_UNLOCK);
-	ReleaseBuffer(buf);
-
-	PG_RETURN_BYTEA_P(raw_page);
 }
 
 /*
  * Return set of database blocks which were changed since specified LSN.
  * This function may return false positives (blocks that have not been updated).
  */
-PG_FUNCTION_INFO_V1(pg_ptrack_get_pagemapset);
+PG_FUNCTION_INFO_V1(ptrack_get_pagemapset);
 Datum
-pg_ptrack_get_pagemapset(PG_FUNCTION_ARGS)
+ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 {
-	FuncCallContext	   *funcctx;
-	PtScanCtx		   *ctx;
-	MemoryContext		oldcontext;
-	XLogRecPtr			update_lsn;
-	datapagemap_t		pagemap;
-	char				gather_path[MAXPGPATH];
+	FuncCallContext *funcctx;
+	PtScanCtx  *ctx;
+	MemoryContext oldcontext;
+	XLogRecPtr	update_lsn;
+	datapagemap_t pagemap;
+	char		gather_path[MAXPGPATH];
 
 	/* Exit immediately if there is no map */
 	if (ptrack_map == NULL)
@@ -384,6 +409,7 @@ pg_ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
+
 		funcctx = SRF_FIRSTCALL_INIT();
 
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
@@ -392,7 +418,7 @@ pg_ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		ctx->lsn = PG_GETARG_LSN(0);
 		ctx->filelist = NIL;
 
-		// get_call_result_type(fcinfo, NULL, &funcctx->tuple_desc);
+		/* get_call_result_type(fcinfo, NULL, &funcctx->tuple_desc); */
 		/* Make tuple descriptor */
 		tupdesc = CreateTemplateTupleDesc(2);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "path", TEXTOID, -1, 0);
@@ -438,11 +464,11 @@ pg_ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 			/* We completed a segment and there is a bitmap to return */
 			if (pagemap.bitmap != NULL)
 			{
-				Datum	values[2];
-				bool	nulls[2] = {false};
-				char	pathname[MAXPGPATH];
-				bytea  *result = NULL;
-				Size 	result_sz = pagemap.bitmapsize + VARHDRSZ;
+				Datum		values[2];
+				bool		nulls[2] = {false};
+				char		pathname[MAXPGPATH];
+				bytea	   *result = NULL;
+				Size		result_sz = pagemap.bitmapsize + VARHDRSZ;
 
 				/* Create a bytea copy of our bitmap */
 				result = (bytea *) palloc(result_sz);
@@ -468,12 +494,12 @@ pg_ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 			}
 		}
 
-		update_lsn = pg_atomic_read_u64(&PtrackContent(ptrack_map)[BID_HASH_FUNC(ctx->bid)]);
+		update_lsn = pg_atomic_read_u64(&ptrack_map->entries[BID_HASH_FUNC(ctx->bid)]);
 
 		if (update_lsn != InvalidXLogRecPtr)
-			elog(DEBUG3, "update_lsn %X/%X of blckno %u of file %s",
-				(uint32) (update_lsn >> 32), (uint32) update_lsn,
-				ctx->bid.blocknum, ctx->relpath);
+			elog(DEBUG3, "ptrack: update_lsn %X/%X of blckno %u of file %s",
+				 (uint32) (update_lsn >> 32), (uint32) update_lsn,
+				 ctx->bid.blocknum, ctx->relpath);
 
 		/* Block has been changed since specified LSN. Mark it in the bitmap */
 		if (update_lsn >= ctx->lsn)

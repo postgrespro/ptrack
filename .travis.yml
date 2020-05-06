@@ -21,10 +21,6 @@ notifications:
         on_success: change
         on_failure: always
 
-# Default MODE is basic, i.e. all tests with PG_PROBACKUP_TEST_BASIC=ON
 env:
     - PG_VERSION=12 PG_BRANCH=REL_12_STABLE
-
-jobs:
-    allow_failures:
-        - if: env(MODE) IN (archive, backup, delta, locking, merge, replica, retention, restore)
+    # - PG_VERSION=13 PG_BRANCH=master

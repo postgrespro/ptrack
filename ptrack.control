@@ -1,5 +1,5 @@
 # ptrack extension
-comment = 'public API for internal ptrack engine'
-default_version = '2.0'
+comment = 'block-level incremental backup engine'
+default_version = '2.1'
 module_pathname = '$libdir/ptrack'
 relocatable = true

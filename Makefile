@@ -1,12 +1,12 @@
 # contrib/ptrack/Makefile
 
 MODULE_big = ptrack
-OBJS = ptrack.o $(WIN32RES)
+OBJS = ptrack.o datapagemap.o engine.o $(WIN32RES)
 EXTENSION = ptrack
-EXTVERSION = 2.0
-DATA = ptrack.sql
+EXTVERSION = 2.1
+DATA = ptrack.sql ptrack--2.0--2.1.sql
 DATA_built = $(EXTENSION)--$(EXTVERSION).sql
-PGFILEDESC = "ptrack - public API for internal ptrack engine"
+PGFILEDESC = "ptrack - block-level incremental backup engine"
 
 EXTRA_CLEAN = $(EXTENSION)--$(EXTVERSION).sql
 
@@ -23,5 +23,27 @@ endif
 
 $(EXTENSION)--$(EXTVERSION).sql: ptrack.sql
 	cat $^ > $@
+
+# check: isolationcheck
+
+# ISOLATIONCHECKS=corner_cases
+
+# submake-isolation:
+# 	$(MAKE) -C $(top_builddir)/src/test/isolation all
+
+# isolationcheck: | submake-isolation temp-install
+# 	$(MKDIR_P) isolation_output
+# 	$(pg_isolation_regress_check) \
+# 	  --temp-config $(top_srcdir)/contrib/pg_query_state/test.conf \
+#       --outputdir=isolation_output \
+# 	  $(ISOLATIONCHECKS)
+
+# isolationcheck-install-force: all | submake-isolation temp-install
+# 	$(MKDIR_P) isolation_output
+# 	$(pg_isolation_regress_installcheck) \
+#       --outputdir=isolation_output \
+# 	  $(ISOLATIONCHECKS)
+
+# .PHONY: isolationcheck isolationcheck-install-force check
 
 temp-install: EXTRA_INSTALL=contrib/ptrack
