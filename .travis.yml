@@ -23,4 +23,4 @@ notifications:
 
 env:
     - PG_VERSION=12 PG_BRANCH=REL_12_STABLE
-    # - PG_VERSION=13 PG_BRANCH=master
+    - PG_VERSION=12 PG_BRANCH=REL_12_STABLE TEST_CASE=test_ptrack_multiple_segments TEST_REPEATS=5

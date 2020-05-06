@@ -12,14 +12,27 @@ fi
 
 if [ -z ${MODE+x} ]; then
 	MODE=basic
+else
+	echo MODE=${MODE}
+fi
+
+if [ ! -z ${TEST_CASE+x} ]; then
+	echo TEST_CASE=${TEST_CASE}
+fi
+
+if [ ! -z ${TEST_REPEATS+x} ]; then
+	echo TEST_REPEATS=${TEST_REPEATS}
+else
+	TEST_REPEATS=1
 fi
 
 echo PG_VERSION=${PG_VERSION}
 echo PG_BRANCH=${PG_BRANCH}
-echo MODE=${MODE}
 
 sed \
 	-e 's/${PG_VERSION}/'${PG_VERSION}/g \
 	-e 's/${PG_BRANCH}/'${PG_BRANCH}/g \
 	-e 's/${MODE}/'${MODE}/g \
+	-e 's/${TEST_CASE}/'${TEST_CASE}/g \
+	-e 's/${TEST_REPEATS}/'${TEST_REPEATS}/g \
 Dockerfile.in > Dockerfile

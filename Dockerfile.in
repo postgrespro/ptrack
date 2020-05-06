@@ -7,6 +7,7 @@ RUN apt-get -yq install python python-pip python-virtualenv
 # Environment
 ENV PG_MAJOR=${PG_VERSION} PG_BRANCH=${PG_BRANCH}
 ENV LANG=C.UTF-8 PGHOME=/pg/testdir/pgbin
+ENV MODE=${MODE} TEST_CASE=${TEST_CASE} TEST_REPEATS=${TEST_REPEATS}
 
 # Make directories
 RUN	mkdir -p /pg/testdir
@@ -21,4 +22,4 @@ WORKDIR /pg/testdir
 RUN	chown -R postgres:postgres /pg/testdir
 
 USER postgres
-ENTRYPOINT MODE=${MODE} /run.sh
+ENTRYPOINT /run.sh

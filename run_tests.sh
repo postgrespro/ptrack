@@ -65,10 +65,9 @@ which pg_config
 echo "############### pg_config"
 pg_config
 
-# Build and install pg_probackup (using PG_CPPFLAGS and SHLIB_LINK for gcov)
+# Build and install pg_probackup
 echo "############### Compiling and installing pg_probackup"
 cd pg_probackup # Go to pg_probackup dir
-# make USE_PGXS=1 PG_CPPFLAGS="-coverage" SHLIB_LINK="-coverage" top_srcdir=$CUSTOM_PG_SRC install
 make USE_PGXS=1 top_srcdir=$PG_SRC install
 
 # Setup python environment
@@ -81,7 +80,14 @@ echo "############### Testing"
 if [ "$MODE" = "basic" ]; then
     export PG_PROBACKUP_TEST_BASIC=ON
 fi
-python -m unittest -v tests.ptrack
+
+if [ -z ${TEST_CASE+x} ]; then
+    python -m unittest -v tests.ptrack
+else
+    for i in `seq $TEST_REPEATS`; do
+        python -m unittest -v tests.ptrack.PtrackTest.$TEST_CASE
+    done
+fi
 
 # Generate *.gcov files
 # gcov src/*.c src/*.h
