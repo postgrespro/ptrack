@@ -16,14 +16,16 @@ else
 	echo MODE=${MODE}
 fi
 
-if [ ! -z ${TEST_CASE+x} ]; then
+if [ -z ${TEST_CASE+x} ]; then
+	TEST_CASE=all
+else
 	echo TEST_CASE=${TEST_CASE}
 fi
 
-if [ ! -z ${TEST_REPEATS+x} ]; then
-	echo TEST_REPEATS=${TEST_REPEATS}
-else
+if [ -z ${TEST_REPEATS+x} ]; then
 	TEST_REPEATS=1
+else
+	echo TEST_REPEATS=${TEST_REPEATS}
 fi
 
 echo PG_VERSION=${PG_VERSION}

@@ -81,7 +81,7 @@ if [ "$MODE" = "basic" ]; then
     export PG_PROBACKUP_TEST_BASIC=ON
 fi
 
-if [ -z ${TEST_CASE+x} ]; then
+if [ "$TEST_CASE" = "all" ]; then
     python -m unittest -v tests.ptrack
 else
     for i in `seq $TEST_REPEATS`; do
