@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.com/postgrespro/ptrack.svg?branch=master)](https://travis-ci.com/postgrespro/ptrack)
+![GitHub tag (latest SemVer)](https://img.shields.io/github/v/tag/postgrespro/ptrack?label=release)
 
 # ptrack
 
