@@ -161,8 +161,8 @@ ptrackMapInit(void)
 	if (stat(ptrack_path, &stat_buf) == 0 &&
 		stat_buf.st_size != PtrackActualSize)
 	{
-		elog(WARNING, "ptrack init: stat_buf.st_size != ptrack_map_size %zu != " UINT64_FORMAT,
-			 (Size) stat_buf.st_size, PtrackActualSize);
+		elog(WARNING, "ptrack init: unexpected \"%s\" file size %zu != " UINT64_FORMAT ", deleting",
+			 ptrack_path, (Size) stat_buf.st_size, PtrackActualSize);
 		durable_unlink(ptrack_path, LOG);
 	}
 
@@ -242,10 +242,13 @@ ptrackMapInit(void)
 		elog(DEBUG1, "ptrack init: crc %u, file_crc %u, init_lsn %X/%X",
 			 crc, *file_crc, (uint32) (init_lsn >> 32), (uint32) init_lsn);
 
-		/* TODO Handle this error. Probably we can just recreate the file */
+		/* TODO: Handle this error. Probably we can just recreate the file */
 		if (!EQ_CRC32C(*file_crc, crc))
 		{
-			elog(ERROR, "ptrack init: incorrect checksum of file \"%s\"", ptrack_path);
+			ereport(ERROR,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("ptrack init: incorrect checksum of file \"%s\"", ptrack_path),
+					 errhint("Delete \"%s\" and start the server again.", ptrack_path)));
 		}
 	}
 	else
