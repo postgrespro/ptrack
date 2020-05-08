@@ -83,13 +83,18 @@ _PG_init(void)
 
 	/*
 	 * Define (or redefine) custom GUC variables.
+	 *
+	 * XXX: for some reason assign_ptrack_map_size is called twice during the
+	 * postmaster boot!  First, it is always called with bootValue, so we use
+	 * -1 as default value and no-op here.  Next, it is called with the actual
+	 * value from config.
 	 */
 	DefineCustomIntVariable("ptrack.map_size",
 							"Sets the size of ptrack map in MB used for incremental backup (0 disabled).",
 							NULL,
 							&ptrack_map_size_tmp,
-							0,
-							0, INT_MAX,
+							-1,
+							-1, INT_MAX,
 							PGC_POSTMASTER,
 							0,
 							NULL,
@@ -376,10 +381,12 @@ PG_FUNCTION_INFO_V1(ptrack_init_lsn);
 Datum
 ptrack_init_lsn(PG_FUNCTION_ARGS)
 {
-	XLogRecPtr	init_lsn = pg_atomic_read_u64(&ptrack_map->init_lsn);
-
 	if (ptrack_map != NULL)
+	{
+		XLogRecPtr	init_lsn = pg_atomic_read_u64(&ptrack_map->init_lsn);
+
 		PG_RETURN_LSN(init_lsn);
+	}
 	else
 	{
 		elog(WARNING, "ptrack is disabled");
@@ -418,7 +425,6 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		ctx->lsn = PG_GETARG_LSN(0);
 		ctx->filelist = NIL;
 
-		/* get_call_result_type(fcinfo, NULL, &funcctx->tuple_desc); */
 		/* Make tuple descriptor */
 		tupdesc = CreateTemplateTupleDesc(2);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "path", TEXTOID, -1, 0);

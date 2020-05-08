@@ -120,9 +120,10 @@ ptrackCleanFilesAndMap(void)
 			elog(LOG, "could not unmap ptrack_map");
 
 		ptrack_map = NULL;
-		if (ptrack_file_exists(ptrack_mmap_path))
-			durable_unlink(ptrack_mmap_path, LOG);
 	}
+
+	if (ptrack_file_exists(ptrack_mmap_path))
+		durable_unlink(ptrack_mmap_path, LOG);
 }
 
 /*
@@ -147,12 +148,8 @@ ptrackMapInit(void)
 	/* We do it at server start, so the map must be not allocated yet. */
 	Assert(ptrack_map == NULL);
 
-	/* Delete ptrack_map and all related files, if ptrack was switched off. */
 	if (ptrack_map_size == 0)
-	{
-		ptrackCleanFilesAndMap();
 		return;
-	}
 
 	sprintf(ptrack_path, "%s/%s", DataDir, PTRACK_PATH);
 	sprintf(ptrack_mmap_path, "%s/%s", DataDir, PTRACK_MMAP_PATH);
@@ -443,7 +440,6 @@ ptrackCheckpoint(void)
 	}
 
 	/* Write if anythig left */
-	/* TODO: check this i */
 	if ((i + 1) % PTRACK_BUF_SIZE != 0)
 	{
 		int			writesz = sizeof(pg_atomic_uint64) * j;
@@ -476,8 +472,7 @@ ptrackCheckpoint(void)
 				 errmsg("ptrack checkpoint: could not close file \"%s\": %m", ptrack_path_tmp)));
 
 	/* And finally replace old file with the new one */
-	/* TODO: shall we use ERROR instead of LOG here? */
-	durable_rename(ptrack_path_tmp, ptrack_path, LOG);
+	durable_rename(ptrack_path_tmp, ptrack_path, ERROR);
 
 	/* Sanity check */
 	if (stat(ptrack_path, &stat_buf) == 0 &&
@@ -496,13 +491,21 @@ assign_ptrack_map_size(int newval, void *extra)
 		 MyProcPid, newval, ptrack_map_size);
 
 	/*
-	 * TODO: for some reason assign_ptrack_map_size is called twice during
-	 * postmaster start: first with bootValue, second with actual config
-	 * value. However, we use 0 as a signal to cleanup all ptrack files, so we
-	 * would drop map on each restart. That way, we return here for now.
+	 * XXX: for some reason assign_ptrack_map_size is called twice during the
+	 * postmaster boot!  First, it is always called with bootValue, so we use
+	 * -1 as default value and no-op here.  Next, it is called with the actual
+	 * value from config.  That way, we use 0 as an option for user to turn
+	 * off ptrack and clean up all files.
 	 */
-	if (newval == 0)
+	if (newval == -1)
 		return;
+
+	/* Delete ptrack_map and all related files, if ptrack was switched off. */
+	if (newval == 0)
+	{
+		ptrackCleanFilesAndMap();
+		return;
+	}
 
 	if (newval != 0 && !XLogIsNeeded())
 		ereport(ERROR,
@@ -516,8 +519,8 @@ assign_ptrack_map_size(int newval, void *extra)
 		/* Always assign ptrack_map_size */
 		ptrack_map_size = newval * 1024 * 1024;
 
-		elog(DEBUG1, "assign_ptrack_map_size: MyProc %d newval %d ptrack_map_size " UINT64_FORMAT,
-			 MyProcPid, newval, ptrack_map_size);
+		elog(DEBUG1, "assign_ptrack_map_size: ptrack_map_size set to " UINT64_FORMAT,
+			 ptrack_map_size);
 
 		/* Init map on postmaster start */
 		if (!IsUnderPostmaster)
@@ -577,8 +580,6 @@ ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 /*
  * Mark all files in the given directory in ptrack_map.
  * For use in functions that copy directories bypassing buffer manager.
- *
- * TODO: do we need to add process_symlinks?
  */
 void
 ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
