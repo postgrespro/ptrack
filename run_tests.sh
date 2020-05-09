@@ -31,6 +31,12 @@ git clone https://github.com/ololobus/pg_probackup.git --depth=1 -b ptrack-tests
 
 # Compile and install Postgres
 cd postgres # Go to postgres dir
+
+# XXX: Hackish way to run tap tests
+mkdir contrib/ptrack
+cp ../* contrib/ptrack/
+cp -R ../t contrib/ptrack/
+
 echo "############### Applying ptrack patch"
 git apply -v -3 ../patches/$PG_BRANCH-ptrack-core.diff
 
@@ -91,11 +97,15 @@ else
     done
 fi
 
+# Exit virtualenv
+deactivate
+
 # Get back to testdir
 cd ..
 
 # Run tap tests
-make USE_PGXS=1 check || status=$?
+echo "############### Running tap tests"
+make -C postgres/contrib/ptrack check || status=$?
 
 # Generate *.gcov files
 gcov src/*.c src/*.h
@@ -103,5 +113,5 @@ gcov src/*.c src/*.h
 # Send coverage stats to Codecov
 bash <(curl -s https://codecov.io/bash)
 
-# Something went wrong, exit with code 1 now
+# Something went wrong, exit with code 1
 if [ $status -ne 0 ]; then exit 1; fi

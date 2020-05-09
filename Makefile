@@ -10,6 +10,8 @@ PGFILEDESC = "ptrack - block-level incremental backup engine"
 
 EXTRA_CLEAN = $(EXTENSION)--$(EXTVERSION).sql
 
+TAP_TESTS = 1
+
 ifdef USE_PGXS
 PG_CONFIG ?= pg_config
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -24,9 +26,9 @@ endif
 $(EXTENSION)--$(EXTVERSION).sql: ptrack.sql
 	cat $^ > $@
 
-temp-install: EXTRA_INSTALL=contrib/ptrack
+# temp-install: EXTRA_INSTALL=contrib/ptrack
 
-check-tap: temp-install
-	$(prove_check)
+# check-tap: temp-install
+# 	$(prove_check)
 
-check: check-tap
+# check: check-tap
