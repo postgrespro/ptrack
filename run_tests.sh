@@ -6,6 +6,7 @@
 
 
 PG_SRC=$PWD/postgres
+status=0
 
 # # Here PG_VERSION is provided by postgres:X-alpine docker image
 # curl "https://ftp.postgresql.org/pub/source/v$PG_VERSION/postgresql-$PG_VERSION.tar.bz2" -o postgresql.tar.bz2
@@ -82,10 +83,10 @@ if [ "$MODE" = "basic" ]; then
 fi
 
 if [ "$TEST_CASE" = "all" ]; then
-    python -m unittest -v tests.ptrack
+    python -m unittest -v tests.ptrack || status=$?
 else
     for i in `seq $TEST_REPEATS`; do
-        python -m unittest -v tests.ptrack.PtrackTest.$TEST_CASE
+        python -m unittest -v tests.ptrack.PtrackTest.$TEST_CASE || status=$?
     done
 fi
 
@@ -97,3 +98,6 @@ gcov src/*.c src/*.h
 
 # Send coverage stats to Codecov
 bash <(curl -s https://codecov.io/bash)
+
+# Something went wrong, exit with code 1
+if [ $status -ne 0 ]; then exit 1; fi
