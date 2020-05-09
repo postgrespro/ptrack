@@ -29,7 +29,7 @@ index 3bc26568eb7..aa282bfe0ab 100644
  	{"config_exec_params", true},
  #endif
 diff --git a/src/backend/storage/file/copydir.c b/src/backend/storage/file/copydir.c
-index 30f6200a86f..4b3a7c4cd75 100644
+index 30f6200a86f..53e3b22c3e4 100644
 --- a/src/backend/storage/file/copydir.c
 +++ b/src/backend/storage/file/copydir.c
 @@ -27,6 +27,8 @@
@@ -41,16 +41,16 @@ index 30f6200a86f..4b3a7c4cd75 100644
  /*
   * copydir: copy a directory
   *
-@@ -118,6 +120,9 @@ copydir(char *fromdir, char *todir, bool recurse)
- 	 * it's been true for ext3 and other filesystems in the past.
- 	 */
- 	fsync_fname(todir, true);
-+
+@@ -78,6 +80,9 @@ copydir(char *fromdir, char *todir, bool recurse)
+ 	}
+ 	FreeDir(xldir);
+ 
 +	if (copydir_hook)
 +		copydir_hook(todir);
- }
- 
- /*
++
+ 	/*
+ 	 * Be paranoid here and fsync all files to ensure the copy is really done.
+ 	 * But if fsync is disabled, we're done.
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
 index 050cee5f9a9..75cf67d464f 100644
 --- a/src/backend/storage/smgr/md.c

@@ -24,26 +24,9 @@ endif
 $(EXTENSION)--$(EXTVERSION).sql: ptrack.sql
 	cat $^ > $@
 
-# check: isolationcheck
-
-# ISOLATIONCHECKS=corner_cases
-
-# submake-isolation:
-# 	$(MAKE) -C $(top_builddir)/src/test/isolation all
-
-# isolationcheck: | submake-isolation temp-install
-# 	$(MKDIR_P) isolation_output
-# 	$(pg_isolation_regress_check) \
-# 	  --temp-config $(top_srcdir)/contrib/pg_query_state/test.conf \
-#       --outputdir=isolation_output \
-# 	  $(ISOLATIONCHECKS)
-
-# isolationcheck-install-force: all | submake-isolation temp-install
-# 	$(MKDIR_P) isolation_output
-# 	$(pg_isolation_regress_installcheck) \
-#       --outputdir=isolation_output \
-# 	  $(ISOLATIONCHECKS)
-
-# .PHONY: isolationcheck isolationcheck-install-force check
-
 temp-install: EXTRA_INSTALL=contrib/ptrack
+
+check-tap: temp-install
+	$(prove_check)
+
+check: check-tap

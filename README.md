@@ -45,9 +45,33 @@ CREATE EXTENSION ptrack;
 
 ## Public SQL API
 
- * ptrack_version() — returns ptrack version string (2.0 currently).
- * ptrack_get_pagemapset('LSN') — returns a set of changed data files with bitmaps of changed blocks since specified LSN.
+ * ptrack_version() — returns ptrack version string.
  * ptrack_init_lsn() — returns LSN of the last ptrack map initialization.
+ * ptrack_get_pagemapset('LSN') — returns a set of changed data files with bitmaps of changed blocks since specified LSN.
+
+Usage example:
+
+```sql
+postgres=# SELECT ptrack_version();
+ ptrack_version 
+----------------
+ 2.1
+(1 row)
+
+postgres=# SELECT ptrack_init_lsn();
+ ptrack_init_lsn 
+-----------------
+ 0/1814408
+(1 row)
+
+postgres=# SELECT ptrack_get_pagemapset('0/186F4C8');
+           ptrack_get_pagemapset           
+-------------------------------------------
+ (global/1262,"\\x0100000000000000000000")
+ (global/2672,"\\x0200000000000000000000")
+ (global/2671,"\\x0200000000000000000000")
+(3 rows)
+```
 
 ## Architecture
 

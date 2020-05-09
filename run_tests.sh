@@ -83,10 +83,14 @@ if [ "$MODE" = "basic" ]; then
 fi
 
 if [ "$TEST_CASE" = "all" ]; then
+    # Run all pg_probackup ptrack tests
     python -m unittest -v tests.ptrack || status=$?
 
     # Get back to testdir
     cd ..
+
+    # Run tap tests
+    make USE_PGXS=1 check || status=$?
 
     # Something went wrong, exit with code 1 now
     if [ $status -ne 0 ]; then exit 1; fi
