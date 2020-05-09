@@ -12,9 +12,8 @@ install:
     - docker-compose build
 
 script:
-    - docker-compose run tests
-    # - docker-compose run $(bash <(curl -s https://codecov.io/env)) tests
-    # - docker run -v $(pwd):/tests --rm centos:7 /tests/travis/backup_restore.sh
+    # - docker-compose run tests
+    - docker-compose run $(bash <(curl -s https://codecov.io/env)) tests
 
 notifications:
     email:
@@ -24,3 +23,4 @@ notifications:
 env:
     - PG_VERSION=12 PG_BRANCH=REL_12_STABLE
     - PG_VERSION=12 PG_BRANCH=REL_12_STABLE TEST_CASE=test_ptrack_multiple_segments TEST_REPEATS=5
+    - PG_VERSION=12 PG_BRANCH=REL_12_STABLE TEST_CASE=test_ptrack_uncommitted_xact TEST_REPEATS=15

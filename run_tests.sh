@@ -55,7 +55,7 @@ cd ..
 
 # Build and install ptrack extension
 echo "############### Compiling and installing ptrack extension"
-make USE_PGXS=1 install
+make USE_PGXS=1 PG_CPPFLAGS="-coverage" SHLIB_LINK="-coverage" install
 
 # Show pg_config path (just in case)
 echo "############### pg_config path"
@@ -89,8 +89,11 @@ else
     done
 fi
 
+# Get back to testdir
+cd ..
+
 # Generate *.gcov files
-# gcov src/*.c src/*.h
+gcov src/*.c src/*.h
 
 # Send coverage stats to Codecov
-# bash <(curl -s https://codecov.io/bash)
+bash <(curl -s https://codecov.io/bash)
