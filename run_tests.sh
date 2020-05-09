@@ -84,20 +84,20 @@ fi
 
 if [ "$TEST_CASE" = "all" ]; then
     python -m unittest -v tests.ptrack || status=$?
+
+    # Get back to testdir
+    cd ..
+
+    # Something went wrong, exit with code 1 now
+    if [ $status -ne 0 ]; then exit 1; fi
+
+    # Generate *.gcov files
+    gcov src/*.c src/*.h
+
+    # Send coverage stats to Codecov
+    bash <(curl -s https://codecov.io/bash)
 else
     for i in `seq $TEST_REPEATS`; do
         python -m unittest -v tests.ptrack.PtrackTest.$TEST_CASE || status=$?
     done
 fi
-
-# Get back to testdir
-cd ..
-
-# Generate *.gcov files
-gcov src/*.c src/*.h
-
-# Send coverage stats to Codecov
-bash <(curl -s https://codecov.io/bash)
-
-# Something went wrong, exit with code 1
-if [ $status -ne 0 ]; then exit 1; fi
