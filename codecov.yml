@@ -2,4 +2,4 @@
 # from report.  Otherwise, we would have to remove some currently
 # unused methods to do not spoil the report.
 ignore:
-  - "**/*datapagemap*"
+  - "**/datapagemap.*"
