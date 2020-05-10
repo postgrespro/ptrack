@@ -4,11 +4,9 @@
 # Copyright (c) 2019-2020, Postgres Professional
 #
 
-
 PG_SRC=$PWD/postgres
 status=0
 
-# # Here PG_VERSION is provided by postgres:X-alpine docker image
 # curl "https://ftp.postgresql.org/pub/source/v$PG_VERSION/postgresql-$PG_VERSION.tar.bz2" -o postgresql.tar.bz2
 # echo "$PG_SHA256 *postgresql.tar.bz2" | sha256sum -c -
 
@@ -36,7 +34,11 @@ echo "############### Applying ptrack patch"
 git apply -v -3 ../patches/$PG_BRANCH-ptrack-core.diff
 
 echo "############### Compiling Postgres"
-./configure --prefix=$PGHOME --enable-debug --enable-cassert --enable-depend --enable-tap-tests
+if [ "$TEST_CASE" = "tap" ] && [ "$MODE" = "legacy" ]; then
+    ./configure CFLAGS='-DEXEC_BACKEND' --disable-atomics --prefix=$PGHOME --enable-debug --enable-cassert --enable-depend --enable-tap-tests
+else
+    ./configure --prefix=$PGHOME --enable-debug --enable-cassert --enable-depend --enable-tap-tests
+fi
 make -s -j$(nproc) install
 make -s -j$(nproc) -C contrib/ install
 

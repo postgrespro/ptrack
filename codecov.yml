@@ -3,3 +3,7 @@
 # unused methods to do not spoil the report.
 ignore:
   - "**/datapagemap.*"
+  - "**/*datapagemap*"
+  - "datapagemap.*"
+  - "datapagemap.c"
+  - "datapagemap.h"
