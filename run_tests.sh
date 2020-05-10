@@ -32,11 +32,6 @@ git clone https://github.com/ololobus/pg_probackup.git --depth=1 -b ptrack-tests
 # Compile and install Postgres
 cd postgres # Go to postgres dir
 
-# XXX: Hackish way to run tap tests
-mkdir contrib/ptrack
-cp ../* contrib/ptrack/
-cp -R ../t contrib/ptrack/
-
 echo "############### Applying ptrack patch"
 git apply -v -3 ../patches/$PG_BRANCH-ptrack-core.diff
 
@@ -50,6 +45,14 @@ export PATH=$PGHOME/bin:$PATH
 export LD_LIBRARY_PATH=$PGHOME/lib
 export PG_CONFIG=$(which pg_config)
 
+# Show pg_config path (just in case)
+echo "############### pg_config path"
+which pg_config
+
+# Show pg_config just in case
+echo "############### pg_config"
+pg_config
+
 # Get amcheck if missing
 if [ ! -d "contrib/amcheck" ]; then
     echo "############### Getting missing amcheck"
@@ -62,53 +65,57 @@ cd ..
 
 # Build and install ptrack extension
 echo "############### Compiling and installing ptrack extension"
-make USE_PGXS=1 PG_CPPFLAGS="-coverage" SHLIB_LINK="-coverage" install
 
-# Show pg_config path (just in case)
-echo "############### pg_config path"
-which pg_config
+# XXX: Hackish way to make possible to run tap tests
+mkdir $PG_SRC/contrib/ptrack
+cp * $PG_SRC/contrib/ptrack/
+cp -R t $PG_SRC/contrib/ptrack/
 
-# Show pg_config just in case
-echo "############### pg_config"
-pg_config
+make USE_PGXS=1 PG_CPPFLAGS="-coverage" SHLIB_LINK="-coverage" -C $PG_SRC/contrib/ptrack/ install
 
-# Build and install pg_probackup
-echo "############### Compiling and installing pg_probackup"
-cd pg_probackup # Go to pg_probackup dir
-make USE_PGXS=1 top_srcdir=$PG_SRC install
+if [ "$TEST_CASE" = "tap" ]; then
 
-# Setup python environment
-echo "############### Setting up python env"
-virtualenv pyenv
-source pyenv/bin/activate
-pip install testgres==1.8.2
+    # Run tap tests
+    echo "############### Running tap tests"
+    make -C postgres/contrib/ptrack check || status=$?
 
-echo "############### Testing"
-if [ "$MODE" = "basic" ]; then
-    export PG_PROBACKUP_TEST_BASIC=ON
-fi
-
-if [ "$TEST_CASE" = "all" ]; then
-    # Run all pg_probackup ptrack tests
-    python -m unittest -v tests.ptrack || status=$?
 else
-    for i in `seq $TEST_REPEATS`; do
-        python -m unittest -v tests.ptrack.PtrackTest.$TEST_CASE || status=$?
-    done
+
+    # Build and install pg_probackup
+    echo "############### Compiling and installing pg_probackup"
+    cd pg_probackup # Go to pg_probackup dir
+    make USE_PGXS=1 top_srcdir=$PG_SRC install
+
+    # Setup python environment
+    echo "############### Setting up python env"
+    virtualenv pyenv
+    source pyenv/bin/activate
+    pip install testgres==1.8.2
+
+    echo "############### Testing"
+    if [ "$MODE" = "basic" ]; then
+        export PG_PROBACKUP_TEST_BASIC=ON
+    fi
+
+    if [ "$TEST_CASE" = "all" ]; then
+        # Run all pg_probackup ptrack tests
+        python -m unittest -v tests.ptrack || status=$?
+    else
+        for i in `seq $TEST_REPEATS`; do
+            python -m unittest -v tests.ptrack.PtrackTest.$TEST_CASE || status=$?
+        done
+    fi
+
+    # Exit virtualenv
+    deactivate
+
+    # Get back to testdir
+    cd ..
+
 fi
-
-# Exit virtualenv
-deactivate
-
-# Get back to testdir
-cd ..
-
-# Run tap tests
-echo "############### Running tap tests"
-make -C postgres/contrib/ptrack check || status=$?
 
 # Generate *.gcov files
-gcov src/*.c src/*.h
+gcov $PG_SRC/contrib/ptrack/*.c $PG_SRC/contrib/ptrack/*.h
 
 # Send coverage stats to Codecov
 bash <(curl -s https://codecov.io/bash)
