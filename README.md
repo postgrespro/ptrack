@@ -6,7 +6,11 @@
 
 ## Overview
 
-Ptrack is a block-level incremental backup engine for PostgreSQL. Currently `ptrack` codebase is split between small PostgreSQL core patch and extension. All public SQL API methods and main engine are placed in the `ptrack` extension, while the core patch contains only certain hooks and modifies binary utilities to ignore `ptrack.map.*` files.
+Ptrack is a block-level incremental backup engine for PostgreSQL. You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `ptrack` engine for taking incremental backups with [pg_probackup](https://github.com/postgrespro/pg_probackup) backup and recovery manager for PostgreSQL.
+
+It is designed to allow false positives (i.e. block/page is marked in the `ptrack` map, but actually has not been changed), but to never allow false negatives (i.e. loosing any `PGDATA` changes, excepting hint-bits).
+
+Currently, `ptrack` codebase is split between small PostgreSQL core patch and extension. All public SQL API methods and main engine are placed in the `ptrack` extension, while the core patch contains only certain hooks and modifies binary utilities to ignore `ptrack.map.*` files.
 
 ## Installation
 
@@ -73,10 +77,45 @@ postgres=# SELECT ptrack_get_pagemapset('0/186F4C8');
 (3 rows)
 ```
 
+## Config options
+
+The only one configurable option is `ptrack.map_size` (in MB). Default is `-1`, which means `ptrack` is turned off. To completely avoid false positives it is recommended to set `ptrack.map_size` to `1 / 1000` of expected `PGDATA` size (i.e. `1000` for 1 TB database), since a single 8 byte `ptrack` map record tracks changes in a standard 8 KB PostgreSQL page. To disable `ptrack` and clean up all remaining service files set `ptrack.map_size` to `0`.
+
 ## Architecture
 
 TBA
 
-## Roadmap
+## Limitations
 
-The main goal currently is to move as much `ptrack` functionality into the extension as possible and leave only certain requred hooks as core patch.
+1. You can only use `ptrack` safely with `wal_level >= 'replica'`. Otherwise, you can lose tracking of some changes if crash-recovery occurs, since [certain commands are designed not to write WAL at all if wal_level is minimal](https://www.postgresql.org/docs/12/populate.html#POPULATE-PITR), but we only durably flush `ptrack` map at checkpoint time.
+
+2. The only one production-ready backup utility, that fully supports `ptrack` is [pg_probackup](https://github.com/postgrespro/pg_probackup).
+
+3. Currently, you cannot resize `ptrack` map in runtime, only on postmaster restart. Also, you will loose all tracked changes, so it is recommended to do so in the maintainance window and accompany this operation with full backup. See [#TODO](TODO) for details.
+
+## Contribution
+
+Feel free to send pull requests, fill up issues, or just reach one of us directly (e.g. <[Alexey Kondratov](mailto:a.kondratov@postgrespro.ru?subject=[GitHub]%20Ptrack), @ololobus>) if you are interested in `ptrack`.
+
+### Tests
+
+Everything is tested automatically with [travis-ci.com](https://travis-ci.com/postgrespro/ptrack) and [codecov.io](https://codecov.io/gh/postgrespro/ptrack), but you can also run tests locally via `Docker`:
+
+```sh
+export PG_VERSION=12
+export PG_BRANCH=REL_12_STABLE
+export TEST_CASE=all
+export MODE=paranoia
+
+docker-compose build
+docker-compose run tests
+```
+
+Available test modes (`MODE`) are `basic` (default) and `paranoia` (per-block checksum comparison of `PGDATA` content before and after backup-restore process). Available test cases (`TEST_CASE`) are `tap` (minimalistic PostgreSQL [tap test](https://github.com/postgrespro/ptrack/blob/master/t/001_basic.pl)), `all` or any specific [pg_probackup test](https://github.com/postgrespro/pg_probackup/blob/master/tests/ptrack.py), e.g. `test_ptrack_simple`.
+
+### TODO
+
+* Should we introduce `ptrack.map_path` to allow `ptrack` service files storage outside of `PGDATA`? Doing that we will avoid patching PostgreSQL binary utilities to ignore `ptrack.map.*` files.
+* Can we resize `ptrack` map on restart but keeping previously tracked changes?
+* Can we resize `ptrack` map dynamicaly?
+* Can we write a formal proof, that we never loose any modified page with `ptrack`? With TLA+?
