@@ -1,0 +1,16 @@
+diff --git a/src/backend/access/heap/heapam_visibility.c b/src/backend/access/heap/heapam_visibility.c
+index 537e681b236..bd9f010f2ea 100644
+--- a/src/backend/access/heap/heapam_visibility.c
++++ b/src/backend/access/heap/heapam_visibility.c
+@@ -113,6 +113,11 @@ static inline void
+ SetHintBits(HeapTupleHeader tuple, Buffer buffer,
+ 			uint16 infomask, TransactionId xid)
+ {
++	/*
++	 * Turn off hint bits to test pg_probackup with PG_PROBACKUP_PARANOIA=ON,
++	 * i.e. doing per block checksums comparison.
++	 */
++	return;
+ 	if (TransactionIdIsValid(xid))
+ 	{
+ 		/* NB: xid must be known committed here! */

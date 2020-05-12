@@ -33,6 +33,11 @@ cd postgres # Go to postgres dir
 echo "############### Applying ptrack patch"
 git apply -v -3 ../patches/$PG_BRANCH-ptrack-core.diff
 
+if [ "$MODE" = "paranoia" ]; then
+    echo "############### Paranoia mode: applying turn-off-hint-bits.diff"
+    git apply -v -3 ../patches/turn-off-hint-bits.diff
+fi
+
 echo "############### Compiling Postgres"
 if [ "$TEST_CASE" = "tap" ] && [ "$MODE" = "legacy" ]; then
     ./configure CFLAGS='-DEXEC_BACKEND' --disable-atomics --prefix=$PGHOME --enable-debug --enable-cassert --enable-depend --enable-tap-tests
@@ -97,6 +102,8 @@ else
     echo "############### Testing"
     if [ "$MODE" = "basic" ]; then
         export PG_PROBACKUP_TEST_BASIC=ON
+    elif [ "$MODE" = "paranoia" ]; then
+        export PG_PROBACKUP_PARANOIA=ON
     fi
 
     if [ "$TEST_CASE" = "all" ]; then
