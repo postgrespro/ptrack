@@ -19,6 +19,7 @@ notifications:
         on_success: change
         on_failure: always
 
+# keep in sync with codecov.yml number of builds
 env:
     - PG_VERSION=12 PG_BRANCH=REL_12_STABLE TEST_CASE=tap
     - PG_VERSION=12 PG_BRANCH=REL_12_STABLE TEST_CASE=tap MODE=legacy
