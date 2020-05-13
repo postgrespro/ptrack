@@ -49,7 +49,9 @@ CREATE EXTENSION ptrack;
 
 ## Configuration
 
-The only one configurable option is `ptrack.map_size` (in MB). Default is `-1`, which means `ptrack` is turned off. To completely avoid false positives it is recommended to set `ptrack.map_size` to `1 / 1000` of expected `PGDATA` size (i.e. `1000` for a 1 TB database), since a single 8 byte `ptrack` map record tracks changes in a standard 8 KB PostgreSQL page. To disable `ptrack` and clean up all remaining service files set `ptrack.map_size` to `0`.
+The only one configurable option is `ptrack.map_size` (in MB). Default is `-1`, which means `ptrack` is turned off. To completely avoid false positives it is recommended to set `ptrack.map_size` to `1 / 1000` of expected `PGDATA` size (i.e. `1000` for a 1 TB database), since a single 8 byte `ptrack` map record tracks changes in a standard 8 KB PostgreSQL page.
+
+To disable `ptrack` and clean up all remaining service files set `ptrack.map_size` to `0`.
 
 ## Public SQL API
 
@@ -87,9 +89,13 @@ postgres=# SELECT ptrack_get_pagemapset('0/186F4C8');
 
 2. The only one production-ready backup utility, that fully supports `ptrack` is [pg_probackup](https://github.com/postgrespro/pg_probackup).
 
-3. Currently, you cannot resize `ptrack` map in runtime, only on postmaster restart. Also, you will loose all tracked changes, so it is recommended to do so in the maintainance window and accompany this operation with full backup. See [TODO](#TODO) for details.
+3. Currently, you cannot resize `ptrack` map in runtime, only on postmaster start. Also, you will loose all tracked changes, so it is recommended to do so in the maintainance window and accompany this operation with full backup. See [TODO](#TODO) for details.
 
 4. You will need up to `ptrack.map_size * 3` of additional disk space, since `ptrack` uses two additional temporary files for durability purpose. See [TODO](#Architecture) for details.
+
+## Benchmarks
+
+Briefly, an overhead of using `ptrack` on TPS usually does not exceed a couple of percent (~1-3%) for a database of dozens to hundreds of gigabytes in size, while the backup time scales down linearly with backup size with a coefficient ~1. It means that an incremental `ptrack` backup of a database with only 20% of changed pages will be 5 times faster than a full backup. More details [here](benchmarks).
 
 ## Architecture
 
