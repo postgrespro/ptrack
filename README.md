@@ -91,7 +91,7 @@ postgres=# SELECT ptrack_get_pagemapset('0/186F4C8');
 
 3. Currently, you cannot resize `ptrack` map in runtime, only on postmaster start. Also, you will loose all tracked changes, so it is recommended to do so in the maintainance window and accompany this operation with full backup. See [TODO](#TODO) for details.
 
-4. You will need up to `ptrack.map_size * 3` of additional disk space, since `ptrack` uses two additional temporary files for durability purpose. See [TODO](#Architecture) for details.
+4. You will need up to `ptrack.map_size * 3` of additional disk space, since `ptrack` uses two additional temporary files for durability purpose. See [Architecture section](#Architecture) for details.
 
 ## Benchmarks
 

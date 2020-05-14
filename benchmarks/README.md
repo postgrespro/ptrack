@@ -2,7 +2,7 @@
 
 ## Runtime overhead
 
-First target was to measure `ptrack` overhead on TPS due to marking modified pages in the map in memory. We used PostgreSQL 12 cluster of approximately 1 GB size, initialized with `pgbench` on a `tmpfs` partition:
+First target was to measure `ptrack` overhead influence on TPS due to marking modified pages in the map in memory. We used PostgreSQL 12 (REL_12_STABLE) cluster of approximately 1 GB size, initialized with `pgbench` on a `tmpfs` partition:
 
 ```sh
 pgbench -i -s 133
@@ -55,9 +55,9 @@ Then a part of one relation was touched with a following query:
 UPDATE large_test2 SET num3 = num3 + 1 WHERE num1 < 20000000 / 5;
 ```
 
-After that, incremental `ptrack` backups were taken with `pg_probackup` followed by full backups. Tests show that `ptrack_backup_time / full_backup_time ~= ptrack_backup_size / full_backup_size`, i.e. if the only 20% of data were modified, then `ptrack` backup will be 5 times faster than full backup. Thus, the overhead of building `ptrack` map during backup is minimal. Example:
+After that, incremental `ptrack` backups were taken with `pg_probackup` followed by full backups. Tests show that `ptrack_backup_time / full_backup_time ~= ptrack_backup_size / full_backup_size`, i.e. if only 20% of data were modified, then `ptrack` backup will be 5 times faster than full backup. Thus, the overhead of building `ptrack` map during backup is minimal. Example:
 
-```log
+```sh
 21:02:43 postgres:~/dev/ptrack_test$ time pg_probackup backup -B $(pwd)/backup --instance=node -p5432 -b ptrack --no-sync --stream
 INFO: Backup start, pg_probackup version: 2.3.1, instance: node, backup ID: QAA89O, backup mode: PTRACK, wal mode: STREAM, remote: false, compress-algorithm: none, compress-level: 1
 INFO: Parent backup: QAA7FL
