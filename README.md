@@ -44,7 +44,7 @@ USE_PGXS=1 make -C /path/to/ptrack/ install
 6) Run PostgreSQL and create `ptrack` extension
 
 ```sql
-CREATE EXTENSION ptrack;
+postgres=# CREATE EXTENSION ptrack;
 ```
 
 ## Configuration
