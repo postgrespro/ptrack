@@ -33,6 +33,10 @@
 
 #define PTRACK_BUF_SIZE 1000
 
+/* Ptrack magic bytes */
+#define PTRACK_MAGIC "ptk"
+#define PTRACK_MAGIC_SIZE 4
+
 /*
  * Header of ptrack map.
  */
@@ -42,7 +46,7 @@ typedef struct PtrackMapHdr
 	 * Three magic bytes (+ \0) to be sure, that we are reading ptrack.map
 	 * with a right PtrackMapHdr strucutre.
 	 */
-	char		magic[4];
+	char		magic[PTRACK_MAGIC_SIZE];
 
 	/*
 	 * Value of PTRACK_VERSION_NUM at the time of map initialization.

@@ -253,7 +253,7 @@ ptrackMapInit(void)
 	}
 	else
 	{
-		strncat(ptrack_map->magic, PTRACK_MAGIC, 3);
+		memcpy(ptrack_map->magic, PTRACK_MAGIC, PTRACK_MAGIC_SIZE);
 		ptrack_map->version_num = PTRACK_VERSION_NUM;
 	}
 
@@ -639,9 +639,13 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 {
 	size_t		hash;
 	XLogRecPtr	new_lsn;
-	XLogRecPtr	old_lsn;
-	XLogRecPtr	old_init_lsn;
 	PtBlockId	bid;
+	/*
+	 * We use pg_atomic_uint64 here only for alignment purposes, because
+	 * pg_atomic_uint64 is forcely aligned on 8 bytes during the MSVC build.
+	 */
+	pg_atomic_uint64	old_lsn;
+	pg_atomic_uint64	old_init_lsn;
 
 	if (ptrack_map_size != 0 && (ptrack_map != NULL) &&
 		smgr_rnode.backend == InvalidBackendId) /* do not track temporary
@@ -657,24 +661,24 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 		else
 			new_lsn = GetXLogInsertRecPtr();
 
-		old_lsn = pg_atomic_read_u64(&ptrack_map->entries[hash]);
+		old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[hash]);
 
 		/* Atomically assign new init LSN value */
-		old_init_lsn = pg_atomic_read_u64(&ptrack_map->init_lsn);
+		old_init_lsn.value = pg_atomic_read_u64(&ptrack_map->init_lsn);
 
-		if (old_init_lsn == InvalidXLogRecPtr)
+		if (old_init_lsn.value == InvalidXLogRecPtr)
 		{
-			elog(DEBUG1, "ptrack_mark_block: init_lsn " UINT64_FORMAT " <- " UINT64_FORMAT, old_init_lsn, new_lsn);
+			elog(DEBUG1, "ptrack_mark_block: init_lsn " UINT64_FORMAT " <- " UINT64_FORMAT, old_init_lsn.value, new_lsn);
 
-			while (old_init_lsn < new_lsn &&
-				   !pg_atomic_compare_exchange_u64(&ptrack_map->init_lsn, &old_init_lsn, new_lsn));
+			while (old_init_lsn.value < new_lsn &&
+				   !pg_atomic_compare_exchange_u64(&ptrack_map->init_lsn, (uint64 *) &old_init_lsn.value, new_lsn));
 		}
 
-		elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, hash, old_lsn, new_lsn);
+		elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, hash, old_lsn.value, new_lsn);
 
 		/* Atomically assign new LSN value */
-		while (old_lsn < new_lsn &&
-			   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[hash], &old_lsn, new_lsn));
+		while (old_lsn.value < new_lsn &&
+			   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[hash], (uint64 *) &old_lsn.value, new_lsn));
 		elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT, hash, pg_atomic_read_u64(&ptrack_map->entries[hash]));
 	}
 }

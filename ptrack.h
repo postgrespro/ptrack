@@ -25,8 +25,6 @@
 #define PTRACK_VERSION "2.1"
 /* Ptrack version as a number */
 #define PTRACK_VERSION_NUM 210
-/* Ptrack magic bytes */
-#define PTRACK_MAGIC "ptk"
 
 /*
  * Structure identifying block on the disk.
