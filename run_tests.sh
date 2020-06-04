@@ -84,7 +84,17 @@ if [ "$TEST_CASE" = "tap" ]; then
 
     # Run tap tests
     echo "############### Running tap tests"
-    make -C postgres/contrib/ptrack check || status=$?
+    if [ "$MODE" = "legacy" ]; then
+        # There is a known issue with attaching shared memory segment using the same
+        # address each time, when EXEC_BACKEND mechanism is turned on.  It happens due
+        # to the ASLR address space randomization, so we are trying to attach a segment
+        # to the already occupied location.  That way we simply turning off ASLR here.
+        #
+        # Postgres comment: https://github.com/postgres/postgres/blob/5cbfce562f7cd2aab0cdc4694ce298ec3567930e/src/backend/postmaster/postmaster.c#L4929
+        setarch x86_64 --addr-no-randomize make -C postgres/contrib/ptrack check || status=$?
+    else
+        make -C postgres/contrib/ptrack check || status=$?
+    fi
 
 else
 
