@@ -83,6 +83,17 @@ postgres=# SELECT ptrack_get_pagemapset('0/186F4C8');
 (3 rows)
 ```
 
+## Upgrading
+
+Usually, you have to only install new version of `ptrack` and do `ALTER EXTENSION 'ptrack' UPDATE;`. However, some specific actions may be required as well:
+
+#### Upgrading from 2.0.0 to 2.1.*:
+
+* Put `shared_preload_libraries = 'ptrack'` into `postgresql.conf`.
+* Rename `ptrack_map_size` to `ptrack.map_size`.
+* Do `ALTER EXTENSION 'ptrack' UPDATE;`.
+* Restart your server.
+
 ## Limitations
 
 1. You can only use `ptrack` safely with `wal_level >= 'replica'`. Otherwise, you can lose tracking of some changes if crash-recovery occurs, since [certain commands are designed not to write WAL at all if wal_level is minimal](https://www.postgresql.org/docs/12/populate.html#POPULATE-PITR), but we only durably flush `ptrack` map at checkpoint time.
