@@ -24,8 +24,8 @@ git clone https://github.com/postgres/postgres.git -b $PG_BRANCH --depth=1
 
 # Clone pg_probackup
 echo "############### Getting pg_probackup sources"
-# git clone https://github.com/postgrespro/pg_probackup.git --depth=1
-git clone https://github.com/ololobus/pg_probackup.git --depth=1 -b ptrack-tests
+git clone https://github.com/postgrespro/pg_probackup.git --depth=1 -b master
+# git clone https://github.com/ololobus/pg_probackup.git --depth=1 -b ptrack-tests
 
 # Compile and install Postgres
 cd postgres # Go to postgres dir
