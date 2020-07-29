@@ -37,7 +37,7 @@ typedef struct PtBlockId
 }			PtBlockId;
 
 /*
- * Context for pg_ptrack_get_pagemapset set returning function.
+ * Context for ptrack_get_pagemapset set returning function.
  */
 typedef struct PtScanCtx
 {
