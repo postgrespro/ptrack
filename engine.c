@@ -33,10 +33,12 @@
 #include "miscadmin.h"
 #include "port/pg_crc32c.h"
 #include "storage/copydir.h"
+#if PG_VERSION_NUM >= 120000
 #include "storage/md.h"
+#include "storage/sync.h"
+#endif
 #include "storage/reinit.h"
 #include "storage/smgr.h"
-#include "storage/sync.h"
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/pg_lsn.h"

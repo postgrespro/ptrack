@@ -29,6 +29,9 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+#if PG_VERSION_NUM < 120000
+#include "access/htup_details.h"
+#endif
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_type.h"
 #include "funcapi.h"
@@ -36,7 +39,9 @@
 #include "nodes/pg_list.h"
 #include "storage/copydir.h"
 #include "storage/lmgr.h"
+#if PG_VERSION_NUM >= 120000
 #include "storage/md.h"
+#endif
 #include "storage/reinit.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -55,7 +60,9 @@ int			ptrack_map_size_tmp;
 static copydir_hook_type prev_copydir_hook = NULL;
 static mdwrite_hook_type prev_mdwrite_hook = NULL;
 static mdextend_hook_type prev_mdextend_hook = NULL;
+#if PG_VERSION_NUM >= 120000
 static ProcessSyncRequests_hook_type prev_ProcessSyncRequests_hook = NULL;
+#endif
 
 void		_PG_init(void);
 void		_PG_fini(void);
@@ -65,8 +72,9 @@ static void ptrack_mdwrite_hook(RelFileNodeBackend smgr_rnode,
 								ForkNumber forkno, BlockNumber blkno);
 static void ptrack_mdextend_hook(RelFileNodeBackend smgr_rnode,
 								 ForkNumber forkno, BlockNumber blkno);
+#if PG_VERSION_NUM >= 120000
 static void ptrack_ProcessSyncRequests_hook(void);
-
+#endif
 static void ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid);
 static int	ptrack_filelist_getnext(PtScanCtx * ctx);
 
@@ -108,8 +116,10 @@ _PG_init(void)
 	mdwrite_hook = ptrack_mdwrite_hook;
 	prev_mdextend_hook = mdextend_hook;
 	mdextend_hook = ptrack_mdextend_hook;
+#if PG_VERSION_NUM >= 120000
 	prev_ProcessSyncRequests_hook = ProcessSyncRequests_hook;
 	ProcessSyncRequests_hook = ptrack_ProcessSyncRequests_hook;
+#endif
 }
 
 /*
@@ -122,7 +132,9 @@ _PG_fini(void)
 	copydir_hook = prev_copydir_hook;
 	mdwrite_hook = prev_mdwrite_hook;
 	mdextend_hook = prev_mdextend_hook;
+#if PG_VERSION_NUM >= 120000
 	ProcessSyncRequests_hook = prev_ProcessSyncRequests_hook;
+#endif
 }
 
 /*
@@ -194,6 +206,7 @@ ptrack_mdextend_hook(RelFileNodeBackend smgr_rnode,
 		prev_mdextend_hook(smgr_rnode, forknum, blocknum);
 }
 
+#if PG_VERSION_NUM >= 120000
 static void
 ptrack_ProcessSyncRequests_hook()
 {
@@ -202,6 +215,7 @@ ptrack_ProcessSyncRequests_hook()
 	if (prev_ProcessSyncRequests_hook)
 		prev_ProcessSyncRequests_hook();
 }
+#endif
 
 /*
  * Recursively walk through the path and add all data files to filelist.
@@ -426,7 +440,11 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		ctx->filelist = NIL;
 
 		/* Make tuple descriptor */
+#if PG_VERSION_NUM >= 120000
 		tupdesc = CreateTemplateTupleDesc(2);
+#else
+		tupdesc = CreateTemplateTupleDesc(2, false);
+#endif
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "path", TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "pagemap", BYTEAOID, -1, 0);
 		funcctx->tuple_desc = BlessTupleDesc(tupdesc);
@@ -475,6 +493,7 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 				char		pathname[MAXPGPATH];
 				bytea	   *result = NULL;
 				Size		result_sz = pagemap.bitmapsize + VARHDRSZ;
+				HeapTuple	htup = NULL;
 
 				/* Create a bytea copy of our bitmap */
 				result = (bytea *) palloc(result_sz);
@@ -490,7 +509,9 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 				pagemap.bitmap = NULL;
 				pagemap.bitmapsize = 0;
 
-				SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(heap_form_tuple(funcctx->tuple_desc, values, nulls)));
+				htup = heap_form_tuple(funcctx->tuple_desc, values, nulls);
+				if (htup)
+					SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(htup));
 			}
 			else
 			{
