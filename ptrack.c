@@ -37,6 +37,10 @@
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "nodes/pg_list.h"
+#ifdef PGPRO_EE
+/* For file_is_in_cfs_tablespace() only. */
+#include "replication/basebackup.h"
+#endif
 #include "storage/copydir.h"
 #include "storage/lmgr.h"
 #if PG_VERSION_NUM >= 120000
@@ -180,6 +184,14 @@ ptrack_copydir_hook(const char *path)
 
 	elog(DEBUG1, "ptrack_copydir_hook: spcOid %u, dbOid %u", spcOid, dbOid);
 
+#ifdef PGPRO_EE
+	/*
+	 * Currently, we do not track files from compressed tablespaces in ptrack.
+	 */
+	if (file_is_in_cfs_tablespace(path))
+		elog(DEBUG1, "ptrack_copydir_hook: skipping changes tracking in the CFS tablespace %u", spcOid);
+	else
+#endif
 	ptrack_walkdir(path, spcOid, dbOid);
 
 	if (prev_copydir_hook)
