@@ -46,6 +46,7 @@
 #if PG_VERSION_NUM >= 120000
 #include "storage/md.h"
 #endif
+#include "storage/smgr.h"
 #include "storage/reinit.h"
 #include "utils/builtins.h"
 #include "utils/guc.h"
@@ -64,9 +65,7 @@ int			ptrack_map_size_tmp;
 static copydir_hook_type prev_copydir_hook = NULL;
 static mdwrite_hook_type prev_mdwrite_hook = NULL;
 static mdextend_hook_type prev_mdextend_hook = NULL;
-#if PG_VERSION_NUM >= 120000
 static ProcessSyncRequests_hook_type prev_ProcessSyncRequests_hook = NULL;
-#endif
 
 void		_PG_init(void);
 void		_PG_fini(void);
@@ -76,9 +75,8 @@ static void ptrack_mdwrite_hook(RelFileNodeBackend smgr_rnode,
 								ForkNumber forkno, BlockNumber blkno);
 static void ptrack_mdextend_hook(RelFileNodeBackend smgr_rnode,
 								 ForkNumber forkno, BlockNumber blkno);
-#if PG_VERSION_NUM >= 120000
 static void ptrack_ProcessSyncRequests_hook(void);
-#endif
+
 static void ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid);
 static int	ptrack_filelist_getnext(PtScanCtx * ctx);
 
@@ -120,10 +118,8 @@ _PG_init(void)
 	mdwrite_hook = ptrack_mdwrite_hook;
 	prev_mdextend_hook = mdextend_hook;
 	mdextend_hook = ptrack_mdextend_hook;
-#if PG_VERSION_NUM >= 120000
 	prev_ProcessSyncRequests_hook = ProcessSyncRequests_hook;
 	ProcessSyncRequests_hook = ptrack_ProcessSyncRequests_hook;
-#endif
 }
 
 /*
@@ -136,9 +132,7 @@ _PG_fini(void)
 	copydir_hook = prev_copydir_hook;
 	mdwrite_hook = prev_mdwrite_hook;
 	mdextend_hook = prev_mdextend_hook;
-#if PG_VERSION_NUM >= 120000
 	ProcessSyncRequests_hook = prev_ProcessSyncRequests_hook;
-#endif
 }
 
 /*
@@ -218,7 +212,6 @@ ptrack_mdextend_hook(RelFileNodeBackend smgr_rnode,
 		prev_mdextend_hook(smgr_rnode, forknum, blocknum);
 }
 
-#if PG_VERSION_NUM >= 120000
 static void
 ptrack_ProcessSyncRequests_hook()
 {
@@ -227,7 +220,6 @@ ptrack_ProcessSyncRequests_hook()
 	if (prev_ProcessSyncRequests_hook)
 		prev_ProcessSyncRequests_hook();
 }
-#endif
 
 /*
  * Recursively walk through the path and add all data files to filelist.
