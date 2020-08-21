@@ -1,0 +1,263 @@
+diff --git a/src/backend/replication/basebackup.c b/src/backend/replication/basebackup.c
+index 3e53b3df6fb..f76bfc2a646 100644
+--- a/src/backend/replication/basebackup.c
++++ b/src/backend/replication/basebackup.c
+@@ -209,6 +209,13 @@ static const struct exclude_list_item excludeFiles[] =
+ 	{"postmaster.pid", false},
+ 	{"postmaster.opts", false},
+ 
++	/*
++	 * Skip all transient ptrack files, but do copy ptrack.map, since it may
++	 * be successfully used immediately after backup. TODO: check, test?
++	 */
++	{"ptrack.map.mmap", false},
++	{"ptrack.map.tmp", false},
++
+ 	/* end of list */
+ 	{NULL, false}
+ };
+@@ -224,6 +231,10 @@ static const struct exclude_list_item noChecksumFiles[] = {
+ 	{"pg_filenode.map", false},
+ 	{"pg_internal.init", true},
+ 	{"PG_VERSION", false},
++	{"ptrack.map.mmap", false},
++	{"ptrack.map", false},
++	{"ptrack.map.tmp", false},
++
+ #ifdef EXEC_BACKEND
+ 	{"config_exec_params", true},
+ #endif
+diff --git a/src/backend/storage/file/copydir.c b/src/backend/storage/file/copydir.c
+index 4a0d23b11e3..d59009a4c8c 100644
+--- a/src/backend/storage/file/copydir.c
++++ b/src/backend/storage/file/copydir.c
+@@ -27,6 +27,8 @@
+ #include "miscadmin.h"
+ #include "pgstat.h"
+ 
++copydir_hook_type copydir_hook = NULL;
++
+ /*
+  * copydir: copy a directory
+  *
+@@ -78,6 +80,9 @@ copydir(char *fromdir, char *todir, bool recurse)
+ 	}
+ 	FreeDir(xldir);
+ 
++	if (copydir_hook)
++		copydir_hook(todir);
++
+ 	/*
+ 	 * Be paranoid here and fsync all files to ensure the copy is really done.
+ 	 * But if fsync is disabled, we're done.
+diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
+index 200cc7f657a..d0dcb5c0287 100644
+--- a/src/backend/storage/smgr/md.c
++++ b/src/backend/storage/smgr/md.c
+@@ -39,6 +39,7 @@
+ #include "utils/memutils.h"
+ #include "pg_trace.h"
+ 
++ProcessSyncRequests_hook_type ProcessSyncRequests_hook = NULL;
+ 
+ /* intervals for calling AbsorbFsyncRequests in mdsync and mdpostckpt */
+ #define FSYNCS_PER_ABSORB		10
+@@ -114,6 +115,8 @@ typedef struct _MdfdVec
+ 
+ static MemoryContext MdCxt;		/* context for all MdfdVec objects */
+ 
++mdextend_hook_type mdextend_hook = NULL;
++mdwrite_hook_type mdwrite_hook = NULL;
+ 
+ /*
+  * In some contexts (currently, standalone backends and the checkpointer)
+@@ -558,6 +561,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+ 		register_dirty_segment(reln, forknum, v);
+ 
+ 	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
++
++	if (mdextend_hook)
++		mdextend_hook(reln->smgr_rnode, forknum, blocknum);
+ }
+ 
+ /*
+@@ -851,6 +857,9 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+ 
+ 	if (!skipFsync && !SmgrIsTemp(reln))
+ 		register_dirty_segment(reln, forknum, v);
++
++	if (mdwrite_hook)
++		mdwrite_hook(reln->smgr_rnode, forknum, blocknum);
+ }
+ 
+ /*
+@@ -1329,6 +1338,9 @@ mdsync(void)
+ 	CheckpointStats.ckpt_longest_sync = longest;
+ 	CheckpointStats.ckpt_agg_sync_time = total_elapsed;
+ 
++	if (ProcessSyncRequests_hook)
++		ProcessSyncRequests_hook();
++
+ 	/* Flag successful completion of mdsync */
+ 	mdsync_in_progress = false;
+ }
+diff --git a/src/bin/pg_resetwal/pg_resetwal.c b/src/bin/pg_resetwal/pg_resetwal.c
+index 6fb403a5a8a..6e31ccb3e0f 100644
+--- a/src/bin/pg_resetwal/pg_resetwal.c
++++ b/src/bin/pg_resetwal/pg_resetwal.c
+@@ -84,6 +84,7 @@ static void RewriteControlFile(void);
+ static void FindEndOfXLOG(void);
+ static void KillExistingXLOG(void);
+ static void KillExistingArchiveStatus(void);
++static void KillExistingPtrack(void);
+ static void WriteEmptyXLOG(void);
+ static void usage(void);
+ 
+@@ -516,6 +517,7 @@ main(int argc, char *argv[])
+ 	RewriteControlFile();
+ 	KillExistingXLOG();
+ 	KillExistingArchiveStatus();
++	KillExistingPtrack();
+ 	WriteEmptyXLOG();
+ 
+ 	printf(_("Write-ahead log reset\n"));
+@@ -1201,6 +1203,57 @@ KillExistingArchiveStatus(void)
+ 	}
+ }
+ 
++/*
++ * Remove existing ptrack files
++ */
++static void
++KillExistingPtrack(void)
++{
++#define PTRACKDIR "global"
++
++	DIR			   *xldir;
++	struct dirent  *xlde;
++	char			path[MAXPGPATH + sizeof(PTRACKDIR)];
++
++	xldir = opendir(PTRACKDIR);
++	if (xldir == NULL)
++	{
++		fprintf(stderr, _("%s: could not open directory \"%s\": %s\n"),
++				progname, PTRACKDIR, strerror(errno));
++		exit(1);
++	}
++
++	while (errno = 0, (xlde = readdir(xldir)) != NULL)
++	{
++		if (strcmp(xlde->d_name, "ptrack.map.mmap") == 0 ||
++			strcmp(xlde->d_name, "ptrack.map") == 0 ||
++			strcmp(xlde->d_name, "ptrack.map.tmp") == 0)
++		{
++			snprintf(path, sizeof(path), "%s/%s", PTRACKDIR, xlde->d_name);
++			if (unlink(path) < 0)
++			{
++				fprintf(stderr, _("%s: could not delete file \"%s\": %s\n"),
++						progname, path, strerror(errno));
++				exit(1);
++			}
++		}
++	}
++
++	if (errno)
++	{
++		fprintf(stderr, _("%s: could not read directory \"%s\": %s\n"),
++				progname, PTRACKDIR, strerror(errno));
++		exit(1);
++	}
++
++	if (closedir(xldir))
++	{
++		fprintf(stderr, _("%s: could not close directory \"%s\": %s\n"),
++				progname, PTRACKDIR, strerror(errno));
++		exit(1);
++	}
++}
++
+ 
+ /*
+  * Write an empty XLOG file, containing only the checkpoint record
+diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
+index 197163d5544..fc846e78175 100644
+--- a/src/bin/pg_rewind/filemap.c
++++ b/src/bin/pg_rewind/filemap.c
+@@ -118,6 +118,10 @@ static const struct exclude_list_item excludeFiles[] =
+ 	{"postmaster.pid", false},
+ 	{"postmaster.opts", false},
+ 
++	{"ptrack.map.mmap", false},
++	{"ptrack.map", false},
++	{"ptrack.map.tmp", false},
++
+ 	/* end of list */
+ 	{NULL, false}
+ };
+diff --git a/src/include/miscadmin.h b/src/include/miscadmin.h
+index 80241455357..50dca7bf6f4 100644
+--- a/src/include/miscadmin.h
++++ b/src/include/miscadmin.h
+@@ -367,7 +367,7 @@ typedef enum ProcessingMode
+ 	NormalProcessing			/* normal processing */
+ } ProcessingMode;
+ 
+-extern ProcessingMode Mode;
++extern PGDLLIMPORT ProcessingMode Mode;
+ 
+ #define IsBootstrapProcessingMode() (Mode == BootstrapProcessing)
+ #define IsInitProcessingMode()		(Mode == InitProcessing)
+diff --git a/src/include/port/pg_crc32c.h b/src/include/port/pg_crc32c.h
+index 9a26295c8e8..dc72b27a10d 100644
+--- a/src/include/port/pg_crc32c.h
++++ b/src/include/port/pg_crc32c.h
+@@ -69,8 +69,11 @@ extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t le
+ #define FIN_CRC32C(crc) ((crc) ^= 0xFFFFFFFF)
+ 
+ extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
+-extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
+-
++extern
++#ifndef FRONTEND
++PGDLLIMPORT
++#endif
++pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
+ #ifdef USE_SSE42_CRC32C_WITH_RUNTIME_CHECK
+ extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t len);
+ #endif
+diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
+index 4fef3e21072..e55430879c3 100644
+--- a/src/include/storage/copydir.h
++++ b/src/include/storage/copydir.h
+@@ -13,6 +13,9 @@
+ #ifndef COPYDIR_H
+ #define COPYDIR_H
+ 
++typedef void (*copydir_hook_type) (const char *path);
++extern PGDLLIMPORT copydir_hook_type copydir_hook;
++
+ extern void copydir(char *fromdir, char *todir, bool recurse);
+ extern void copy_file(char *fromfile, char *tofile);
+ 
+diff --git a/src/include/storage/smgr.h b/src/include/storage/smgr.h
+index 0298ed1a2bc..24c684771d0 100644
+--- a/src/include/storage/smgr.h
++++ b/src/include/storage/smgr.h
+@@ -116,6 +116,17 @@ extern void AtEOXact_SMgr(void);
+ /* internals: move me elsewhere -- ay 7/94 */
+ 
+ /* in md.c */
++
++typedef void (*mdextend_hook_type) (RelFileNodeBackend smgr_rnode,
++									ForkNumber forknum, BlockNumber blocknum);
++extern PGDLLIMPORT mdextend_hook_type mdextend_hook;
++typedef void (*mdwrite_hook_type) (RelFileNodeBackend smgr_rnode,
++								   ForkNumber forknum, BlockNumber blocknum);
++extern PGDLLIMPORT mdwrite_hook_type mdwrite_hook;
++
++typedef void (*ProcessSyncRequests_hook_type) (void);
++extern PGDLLIMPORT ProcessSyncRequests_hook_type ProcessSyncRequests_hook;
++
+ extern void mdinit(void);
+ extern void mdclose(SMgrRelation reln, ForkNumber forknum);
+ extern void mdcreate(SMgrRelation reln, ForkNumber forknum, bool isRedo);
