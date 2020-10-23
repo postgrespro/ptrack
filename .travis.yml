@@ -31,5 +31,5 @@ env:
     - PG_VERSION=11 PG_BRANCH=REL_11_STABLE TEST_CASE=all MODE=paranoia
     - PG_VERSION=12 PG_BRANCH=REL_12_STABLE TEST_CASE=test_ptrack_multiple_segments TEST_REPEATS=5 MODE=paranoia
     - PG_VERSION=12 PG_BRANCH=REL_12_STABLE TEST_CASE=test_ptrack_eat_my_data TEST_REPEATS=4
-    - PG_VERSION=12 PG_BRANCH=REL_12_STABLE TEST_CASE=test_ptrack_truncate_replica TEST_REPEATS=5
-    - PG_VERSION=11 PG_BRANCH=REL_11_STABLE TEST_CASE=test_ptrack_truncate_replica TEST_REPEATS=5
+    - PG_VERSION=12 PG_BRANCH=REL_12_STABLE TEST_CASE=test_basic_ptrack_truncate_replica TEST_REPEATS=5
+    - PG_VERSION=11 PG_BRANCH=REL_11_STABLE TEST_CASE=test_basic_ptrack_truncate_replica TEST_REPEATS=5
