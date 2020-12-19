@@ -16,34 +16,40 @@ This extension is compatible with PostgreSQL [11](https://github.com/postgrespro
 
 ## Installation
 
-1) Get latest PostgreSQL sources:
+1) Get latest `ptrack` sources:
+
+```shell
+git clone https://github.com/postgrespro/ptrack.git
+```
+
+2) Get latest PostgreSQL sources:
 
 ```shell
 git clone https://github.com/postgres/postgres.git -b REL_12_STABLE && cd postgres
 ```
 
-2) Apply PostgreSQL core patch:
+3) Apply PostgreSQL core patch:
 
 ```shell
-git apply -3 ptrack/patches/REL_12_STABLE-ptrack-core.diff
+git apply -3 ../ptrack/patches/REL_12_STABLE-ptrack-core.diff
 ```
 
-3) Compile and install PostgreSQL
+4) Compile and install PostgreSQL
 
-4) Set `ptrack.map_size` (in MB)
+5) Set `ptrack.map_size` (in MB)
 
 ```shell
 echo "shared_preload_libraries = 'ptrack'" >> postgres_data/postgresql.conf
 echo "ptrack.map_size = 64" >> postgres_data/postgresql.conf
 ```
 
-5) Compile and install `ptrack` extension
+6) Compile and install `ptrack` extension
 
 ```shell
 USE_PGXS=1 make -C /path/to/ptrack/ install
 ```
 
-6) Run PostgreSQL and create `ptrack` extension
+7) Run PostgreSQL and create `ptrack` extension
 
 ```sql
 postgres=# CREATE EXTENSION ptrack;
