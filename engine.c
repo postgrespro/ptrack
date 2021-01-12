@@ -515,14 +515,14 @@ assign_ptrack_map_size(int newval, void *extra)
 	if (newval != 0 && !XLogIsNeeded())
 		ereport(ERROR,
 				(errmsg("assign_ptrack_map_size: cannot use ptrack if wal_level is minimal"),
-				 errdetail("Set wal_level to \"replica\" or higher, or turn off ptrack with \"ptrack_map_size=0\"")));
+				 errdetail("Set wal_level to \"replica\" or higher, or turn off ptrack with \"ptrack.map_size=0\"")));
 
 	if (DataDir != NULL &&
 		!IsBootstrapProcessingMode() &&
 		!InitializingParallelWorker)
 	{
-		/* Always assign ptrack_map_size */
-		ptrack_map_size = newval * 1024 * 1024;
+		/* Cast to uint64 in order to avoid int32 overflow */
+		ptrack_map_size = (uint64) 1024 * 1024 * newval;
 
 		elog(DEBUG1, "assign_ptrack_map_size: ptrack_map_size set to " UINT64_FORMAT,
 			 ptrack_map_size);
