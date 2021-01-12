@@ -104,7 +104,7 @@ _PG_init(void)
 							NULL,
 							&ptrack_map_size_tmp,
 							-1,
-							-1, INT_MAX,
+							-1, 32 * 1024, /* limit to 32 GB */
 							PGC_POSTMASTER,
 							0,
 							NULL,
