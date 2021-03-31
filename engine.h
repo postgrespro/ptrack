@@ -31,7 +31,13 @@
 /* Used for atomical crash-safe update of ptrack.map */
 #define PTRACK_PATH_TMP "global/ptrack.map.tmp"
 
-#define PTRACK_BUF_SIZE 1000
+/*
+ * 8k of 64 bit LSNs is 64 KB, which looks like a reasonable
+ * buffer size for disk writes.  On fast NVMe SSD it gives
+ * around 20% increase in ptrack checkpoint speed compared
+ * to PTRACK_BUF_SIZE == 1000, i.e. 8 KB writes.
+ */
+#define PTRACK_BUF_SIZE ((uint64) 8000)
 
 /* Ptrack magic bytes */
 #define PTRACK_MAGIC "ptk"

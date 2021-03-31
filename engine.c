@@ -430,7 +430,7 @@ ptrackCheckpoint(void)
 
 		if (j == PTRACK_BUF_SIZE)
 		{
-			int			writesz = sizeof(buf); /* Up to ~2 GB for buffer size seems
+			size_t		writesz = sizeof(buf); /* Up to ~2 GB for buffer size seems
 												* to be more than enough, so never
 												* going to overflow. */
 
@@ -439,7 +439,7 @@ ptrackCheckpoint(void)
 			 * takes into account all paddings for us.
 			 */
 			ptrack_write_chunk(ptrack_tmp_fd, &crc, (char *) buf, writesz);
-			elog(DEBUG5, "ptrack checkpoint: i " UINT64_FORMAT ", j " UINT64_FORMAT ", writesz %d PtrackContentNblocks " UINT64_FORMAT,
+			elog(DEBUG5, "ptrack checkpoint: i " UINT64_FORMAT ", j " UINT64_FORMAT ", writesz %zu PtrackContentNblocks " UINT64_FORMAT,
 				 i, j, writesz, (uint64) PtrackContentNblocks);
 
 			j = 0;
@@ -449,10 +449,10 @@ ptrackCheckpoint(void)
 	/* Write if anythig left */
 	if ((i + 1) % PTRACK_BUF_SIZE != 0)
 	{
-		int			writesz = sizeof(pg_atomic_uint64) * j;
+		size_t		writesz = sizeof(pg_atomic_uint64) * j;
 
 		ptrack_write_chunk(ptrack_tmp_fd, &crc, (char *) buf, writesz);
-		elog(DEBUG5, "ptrack checkpoint: final i " UINT64_FORMAT ", j " UINT64_FORMAT ", writesz %d PtrackContentNblocks " UINT64_FORMAT,
+		elog(DEBUG5, "ptrack checkpoint: final i " UINT64_FORMAT ", j " UINT64_FORMAT ", writesz %zu PtrackContentNblocks " UINT64_FORMAT,
 			 i, j, writesz, (uint64) PtrackContentNblocks);
 	}
 
