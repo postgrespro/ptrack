@@ -337,8 +337,8 @@ ptrackCheckpoint(void)
 	XLogRecPtr	init_lsn;
 	pg_atomic_uint64 buf[PTRACK_BUF_SIZE];
 	struct stat stat_buf;
-	int			i = 0;
-	int			j = 0;
+	uint64		i = 0;
+	uint64		j = 0;
 
 	elog(DEBUG1, "ptrack checkpoint");
 
@@ -430,14 +430,16 @@ ptrackCheckpoint(void)
 
 		if (j == PTRACK_BUF_SIZE)
 		{
-			int			writesz = sizeof(buf);
+			int			writesz = sizeof(buf); /* Up to ~2 GB for buffer size seems
+												* to be more than enough, so never
+												* going to overflow. */
 
 			/*
 			 * We should not have any allignment issues here, since sizeof()
 			 * takes into account all paddings for us.
 			 */
 			ptrack_write_chunk(ptrack_tmp_fd, &crc, (char *) buf, writesz);
-			elog(DEBUG5, "ptrack checkpoint: i %d, j %d, writesz %d PtrackContentNblocks " UINT64_FORMAT,
+			elog(DEBUG5, "ptrack checkpoint: i " UINT64_FORMAT ", j " UINT64_FORMAT ", writesz %d PtrackContentNblocks " UINT64_FORMAT,
 				 i, j, writesz, (uint64) PtrackContentNblocks);
 
 			j = 0;
@@ -450,7 +452,7 @@ ptrackCheckpoint(void)
 		int			writesz = sizeof(pg_atomic_uint64) * j;
 
 		ptrack_write_chunk(ptrack_tmp_fd, &crc, (char *) buf, writesz);
-		elog(DEBUG5, "ptrack checkpoint: final i %d, j %d, writesz %d PtrackContentNblocks " UINT64_FORMAT,
+		elog(DEBUG5, "ptrack checkpoint: final i " UINT64_FORMAT ", j " UINT64_FORMAT ", writesz %d PtrackContentNblocks " UINT64_FORMAT,
 			 i, j, writesz, (uint64) PtrackContentNblocks);
 	}
 
