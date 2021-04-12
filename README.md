@@ -143,6 +143,8 @@ export PG_BRANCH=REL_12_STABLE
 export TEST_CASE=all
 export MODE=paranoia
 
+./make_dockerfile.sh
+
 docker-compose build
 docker-compose run tests
 ```
