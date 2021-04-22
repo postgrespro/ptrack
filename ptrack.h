@@ -22,7 +22,7 @@
 #include "utils/relcache.h"
 
 /* Ptrack version as a string */
-#define PTRACK_VERSION "2.1"
+#define PTRACK_VERSION "2.2"
 /* Ptrack version as a number */
 #define PTRACK_VERSION_NUM 220
 
