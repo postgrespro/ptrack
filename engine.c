@@ -156,6 +156,8 @@ ptrackMapInit(void)
 	sprintf(ptrack_path, "%s/%s", DataDir, PTRACK_PATH);
 	sprintf(ptrack_mmap_path, "%s/%s", DataDir, PTRACK_MMAP_PATH);
 
+ptrack_map_reinit:
+
 	/* Remove old PTRACK_MMAP_PATH file, if exists */
 	if (ptrack_file_exists(ptrack_mmap_path))
 		durable_unlink(ptrack_mmap_path, LOG);
@@ -175,18 +177,15 @@ ptrackMapInit(void)
 	if (stat(ptrack_path, &stat_buf) == 0)
 	{
 		copy_file(ptrack_path, ptrack_mmap_path);
-		is_new_map = false;		/* flag to check checksum */
+		is_new_map = false;		/* flag to check map file format and checksum */
 		ptrack_fd = BasicOpenFile(ptrack_mmap_path, O_RDWR | PG_BINARY);
-		if (ptrack_fd < 0)
-			elog(ERROR, "ptrack init: failed to open map file \"%s\": %m", ptrack_mmap_path);
 	}
 	else
-	{
 		/* Create new file for PTRACK_MMAP_PATH */
 		ptrack_fd = BasicOpenFile(ptrack_mmap_path, O_RDWR | O_CREAT | PG_BINARY);
-		if (ptrack_fd < 0)
-			elog(ERROR, "ptrack init: failed to open map file \"%s\": %m", ptrack_mmap_path);
-	}
+
+	if (ptrack_fd < 0)
+		elog(ERROR, "ptrack init: failed to open map file \"%s\": %m", ptrack_mmap_path);
 
 #ifdef WIN32
 	{
@@ -227,7 +226,19 @@ ptrackMapInit(void)
 			elog(ERROR, "ptrack init: wrong map format of file \"%s\"", ptrack_path);
 
 		/* Check ptrack version inside old ptrack map */
-		/* No-op for now, but may be used for future compatibility checks */
+		if (ptrack_map->version_num != PTRACK_VERSION_NUM)
+		{
+			ereport(WARNING,
+					(errcode(ERRCODE_DATA_CORRUPTED),
+					 errmsg("ptrack init: map format version %d in the file \"%s\" is incompatible with loaded version %d",
+							ptrack_map->version_num, ptrack_path, PTRACK_VERSION_NUM),
+					 errdetail("Deleting file \"%s\" and reinitializing ptrack map.", ptrack_path)));
+
+			/* Delete and try again */
+			durable_unlink(ptrack_path, LOG);
+			is_new_map = true;
+			goto ptrack_map_reinit;
+		}
 
 		/* Check CRC */
 		INIT_CRC32C(crc);
@@ -641,48 +652,56 @@ void
 ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 				  ForkNumber forknum, BlockNumber blocknum)
 {
-	size_t		hash;
-	XLogRecPtr	new_lsn;
 	PtBlockId	bid;
+	size_t		hash;
+	size_t		slot1;
+	size_t		slot2;
+	XLogRecPtr	new_lsn;
 	/*
 	 * We use pg_atomic_uint64 here only for alignment purposes, because
-	 * pg_atomic_uint64 is forcely aligned on 8 bytes during the MSVC build.
+	 * pg_atomic_uint64 is forcedly aligned on 8 bytes during the MSVC build.
 	 */
 	pg_atomic_uint64	old_lsn;
 	pg_atomic_uint64	old_init_lsn;
 
-	if (ptrack_map_size != 0 && (ptrack_map != NULL) &&
-		smgr_rnode.backend == InvalidBackendId) /* do not track temporary
-												 * relations */
+	if (ptrack_map_size == 0
+		|| ptrack_map == NULL
+		|| smgr_rnode.backend != InvalidBackendId) /* do not track temporary
+													* relations */
+		return;
+
+	bid.relnode = smgr_rnode.node;
+	bid.forknum = forknum;
+	bid.blocknum = blocknum;
+
+	hash = BID_HASH_FUNC(bid);
+	slot1 = hash % PtrackContentNblocks;
+	slot2 = ((hash << 32) | (hash >> 32)) % PtrackContentNblocks;
+
+	if (RecoveryInProgress())
+		new_lsn = GetXLogReplayRecPtr(NULL);
+	else
+		new_lsn = GetXLogInsertRecPtr();
+
+	/* Atomically assign new init LSN value */
+	old_init_lsn.value = pg_atomic_read_u64(&ptrack_map->init_lsn);
+	if (old_init_lsn.value == InvalidXLogRecPtr)
 	{
-		bid.relnode = smgr_rnode.node;
-		bid.forknum = forknum;
-		bid.blocknum = blocknum;
-		hash = BID_HASH_FUNC(bid);
+		elog(DEBUG1, "ptrack_mark_block: init_lsn " UINT64_FORMAT " <- " UINT64_FORMAT, old_init_lsn.value, new_lsn);
 
-		if (RecoveryInProgress())
-			new_lsn = GetXLogReplayRecPtr(NULL);
-		else
-			new_lsn = GetXLogInsertRecPtr();
-
-		old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[hash]);
-
-		/* Atomically assign new init LSN value */
-		old_init_lsn.value = pg_atomic_read_u64(&ptrack_map->init_lsn);
-
-		if (old_init_lsn.value == InvalidXLogRecPtr)
-		{
-			elog(DEBUG1, "ptrack_mark_block: init_lsn " UINT64_FORMAT " <- " UINT64_FORMAT, old_init_lsn.value, new_lsn);
-
-			while (old_init_lsn.value < new_lsn &&
-				   !pg_atomic_compare_exchange_u64(&ptrack_map->init_lsn, (uint64 *) &old_init_lsn.value, new_lsn));
-		}
-
-		elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, hash, old_lsn.value, new_lsn);
-
-		/* Atomically assign new LSN value */
-		while (old_lsn.value < new_lsn &&
-			   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[hash], (uint64 *) &old_lsn.value, new_lsn));
-		elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT, hash, pg_atomic_read_u64(&ptrack_map->entries[hash]));
+		while (old_init_lsn.value < new_lsn &&
+			   !pg_atomic_compare_exchange_u64(&ptrack_map->init_lsn, (uint64 *) &old_init_lsn.value, new_lsn));
 	}
+
+	/* Atomically assign new LSN value to the first slot */
+	old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[slot1]);
+	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, slot1, old_lsn.value, new_lsn);
+	while (old_lsn.value < new_lsn &&
+		   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[slot1], (uint64 *) &old_lsn.value, new_lsn));
+	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT, hash, pg_atomic_read_u64(&ptrack_map->entries[slot1]));
+
+	/* And to the second */
+	old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
+	while (old_lsn.value < new_lsn &&
+		   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[slot2], (uint64 *) &old_lsn.value, new_lsn));
 }

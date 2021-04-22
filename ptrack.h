@@ -24,7 +24,7 @@
 /* Ptrack version as a string */
 #define PTRACK_VERSION "2.1"
 /* Ptrack version as a number */
-#define PTRACK_VERSION_NUM 210
+#define PTRACK_VERSION_NUM 220
 
 /*
  * Structure identifying block on the disk.
