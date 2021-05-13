@@ -1,6 +1,6 @@
 .deps
 *.so
 *.o
-ptrack--2.0.sql
+ptrack--2.1.sql
 Dockerfile
 
