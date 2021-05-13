@@ -67,7 +67,6 @@ To disable `ptrack` and clean up all remaining service files set `ptrack.map_siz
  * ptrack_init_lsn() — returns LSN of the last ptrack map initialization.
  * ptrack_get_pagemapset(start_lsn pg_lsn) — returns a set of changed data files with bitmaps of changed blocks since specified `start_lsn`.
  * ptrack_get_change_stat(start_lsn pg_lsn) — returns statistic of changes (number of files, pages and size in MB) since specified `start_lsn`.
- * ptrack_get_change_file_stat(start_lsn pg_lsn) — returns per file statistic of changes (number of pages and size in MB) since specified `start_lsn`.
 
 Usage example:
 

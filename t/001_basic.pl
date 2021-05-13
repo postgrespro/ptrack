@@ -10,7 +10,7 @@ use PostgresNode;
 use TestLib;
 use Test::More;
 
-plan tests => 25;
+plan tests => 24;
 
 my $node;
 my $res;
@@ -118,9 +118,6 @@ like(
 # Check change stats
 $res_stdout = $node->safe_psql("postgres", "SELECT pages FROM ptrack_get_change_stat('$flush_lsn')");
 is($res_stdout > 0, 1, 'should be able to get aggregated stats of changes');
-
-$res_stdout = $node->safe_psql("postgres", "SELECT count(*) FROM ptrack_get_change_file_stat('$flush_lsn')");
-is($res_stdout > 0, 1, 'should be able to get per file stats of changes');
 
 # We should be able to change ptrack map size (but loose all changes)
 $node->append_conf(
