@@ -137,7 +137,7 @@ _PG_fini(void)
 
 /*
  * Ptrack follow up for copydir() routine.  It parses database OID
- * and tablespace OID from path string.  We do not need to recoursively
+ * and tablespace OID from path string.  We do not need to recursively
  * walk subdirs here, copydir() will do it for us if needed.
  */
 static void

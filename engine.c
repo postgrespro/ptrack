@@ -390,7 +390,7 @@ ptrackCheckpoint(void)
 	/*
 	 * We are writing ptrack map values to file, but we want to simply map it
 	 * into the memory with mmap after a crash/restart. That way, we have to
-	 * write values taking into account all paddings/allignments.
+	 * write values taking into account all paddings/alignments.
 	 *
 	 * Write both magic and varsion_num at once.
 	 */
@@ -447,7 +447,7 @@ ptrackCheckpoint(void)
 												* going to overflow. */
 
 			/*
-			 * We should not have any allignment issues here, since sizeof()
+			 * We should not have any alignment issues here, since sizeof()
 			 * takes into account all paddings for us.
 			 */
 			ptrack_write_chunk(ptrack_tmp_fd, &crc, (char *) buf, writesz);
@@ -458,7 +458,7 @@ ptrackCheckpoint(void)
 		}
 	}
 
-	/* Write if anythig left */
+	/* Write if anything left */
 	if ((i + 1) % PTRACK_BUF_SIZE != 0)
 	{
 		size_t		writesz = sizeof(pg_atomic_uint64) * j;
