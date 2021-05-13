@@ -234,8 +234,9 @@ ptrack_map_reinit:
 							ptrack_map->version_num, ptrack_path, PTRACK_VERSION_NUM),
 					 errdetail("Deleting file \"%s\" and reinitializing ptrack map.", ptrack_path)));
 
-			/* Delete and try again */
-			durable_unlink(ptrack_path, LOG);
+			/* Clean up everything and try again */
+			ptrackCleanFilesAndMap();
+
 			is_new_map = true;
 			goto ptrack_map_reinit;
 		}
