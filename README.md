@@ -65,7 +65,8 @@ To disable `ptrack` and clean up all remaining service files set `ptrack.map_siz
 
  * ptrack_version() — returns ptrack version string.
  * ptrack_init_lsn() — returns LSN of the last ptrack map initialization.
- * ptrack_get_pagemapset('LSN') — returns a set of changed data files with bitmaps of changed blocks since specified LSN.
+ * ptrack_get_pagemapset(start_lsn pg_lsn) — returns a set of changed data files with bitmaps of changed blocks since specified `start_lsn`.
+ * ptrack_get_change_stat(start_lsn pg_lsn) — returns statistic of changes (number of files, pages and size in MB) since specified `start_lsn`.
 
 Usage example:
 
@@ -101,6 +102,10 @@ Usually, you have to only install new version of `ptrack` and do `ALTER EXTENSIO
 * Rename `ptrack_map_size` to `ptrack.map_size`.
 * Do `ALTER EXTENSION 'ptrack' UPDATE;`.
 * Restart your server.
+
+#### Upgrading from 2.1.* to 2.2.*:
+
+Since version 2.2 we use a different algorithm for tracking changed pages. Thus, data recorded in the `ptrack.map` using pre 2.2 versions of `ptrack` is incompatible with newer versions. After extension upgrade and server restart old `ptrack.map` will be discarded with `WARNING` and initialized from the scratch.
 
 ## Limitations
 

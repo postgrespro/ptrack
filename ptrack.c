@@ -137,7 +137,7 @@ _PG_fini(void)
 
 /*
  * Ptrack follow up for copydir() routine.  It parses database OID
- * and tablespace OID from path string.  We do not need to recoursively
+ * and tablespace OID from path string.  We do not need to recursively
  * walk subdirs here, copydir() will do it for us if needed.
  */
 static void
@@ -420,11 +420,11 @@ PG_FUNCTION_INFO_V1(ptrack_get_pagemapset);
 Datum
 ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 {
+	PtScanCtx *ctx;
 	FuncCallContext *funcctx;
-	PtScanCtx  *ctx;
 	MemoryContext oldcontext;
-	XLogRecPtr	update_lsn;
 	datapagemap_t pagemap;
+	int64		pagecount = 0;
 	char		gather_path[MAXPGPATH];
 
 	/* Exit immediately if there is no map */
@@ -445,12 +445,13 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 
 		/* Make tuple descriptor */
 #if PG_VERSION_NUM >= 120000
-		tupdesc = CreateTemplateTupleDesc(2);
+		tupdesc = CreateTemplateTupleDesc(3);
 #else
-		tupdesc = CreateTemplateTupleDesc(2, false);
+		tupdesc = CreateTemplateTupleDesc(3, false);
 #endif
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "path", TEXTOID, -1, 0);
-		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "pagemap", BYTEAOID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "pagecount", INT8OID, -1, 0);
+		TupleDescInitEntry(tupdesc, (AttrNumber) 3, "pagemap", BYTEAOID, -1, 0);
 		funcctx->tuple_desc = BlessTupleDesc(tupdesc);
 
 		funcctx->user_fctx = ctx;
@@ -486,14 +487,20 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 
 	while (true)
 	{
+		size_t		hash;
+		size_t		slot1;
+		size_t		slot2;
+		XLogRecPtr	update_lsn1;
+		XLogRecPtr	update_lsn2;
+
 		/* Stop traversal if there are no more segments */
 		if (ctx->bid.blocknum > ctx->relsize)
 		{
 			/* We completed a segment and there is a bitmap to return */
 			if (pagemap.bitmap != NULL)
 			{
-				Datum		values[2];
-				bool		nulls[2] = {false};
+				Datum		values[3];
+				bool		nulls[3] = {false};
 				char		pathname[MAXPGPATH];
 				bytea	   *result = NULL;
 				Size		result_sz = pagemap.bitmapsize + VARHDRSZ;
@@ -507,11 +514,13 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 				strcpy(pathname, ctx->relpath);
 
 				values[0] = CStringGetTextDatum(pathname);
-				values[1] = PointerGetDatum(result);
+				values[1] = Int64GetDatum(pagecount);
+				values[2] = PointerGetDatum(result);
 
 				pfree(pagemap.bitmap);
 				pagemap.bitmap = NULL;
 				pagemap.bitmapsize = 0;
+				pagecount = 0;
 
 				htup = heap_form_tuple(funcctx->tuple_desc, values, nulls);
 				if (htup)
@@ -525,16 +534,34 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 			}
 		}
 
-		update_lsn = pg_atomic_read_u64(&ptrack_map->entries[BID_HASH_FUNC(ctx->bid)]);
+		hash = BID_HASH_FUNC(ctx->bid);
+		slot1 = hash % PtrackContentNblocks;
 
-		if (update_lsn != InvalidXLogRecPtr)
-			elog(DEBUG3, "ptrack: update_lsn %X/%X of blckno %u of file %s",
-				 (uint32) (update_lsn >> 32), (uint32) update_lsn,
+		update_lsn1 = pg_atomic_read_u64(&ptrack_map->entries[slot1]);
+
+		if (update_lsn1 != InvalidXLogRecPtr)
+			elog(DEBUG3, "ptrack: update_lsn1 %X/%X of blckno %u of file %s",
+				 (uint32) (update_lsn1 >> 32), (uint32) update_lsn1,
 				 ctx->bid.blocknum, ctx->relpath);
 
-		/* Block has been changed since specified LSN. Mark it in the bitmap */
-		if (update_lsn >= ctx->lsn)
-			datapagemap_add(&pagemap, ctx->bid.blocknum % ((BlockNumber) RELSEG_SIZE));
+		/* Only probe the second slot if the first one is marked */
+		if (update_lsn1 >= ctx->lsn)
+		{
+			slot2 = ((hash << 32) | (hash >> 32)) % PtrackContentNblocks;
+			update_lsn2 = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
+
+			if (update_lsn2 != InvalidXLogRecPtr)
+				elog(DEBUG3, "ptrack: update_lsn2 %X/%X of blckno %u of file %s",
+					 (uint32) (update_lsn1 >> 32), (uint32) update_lsn2,
+					 ctx->bid.blocknum, ctx->relpath);
+
+			/* Block has been changed since specified LSN.  Mark it in the bitmap */
+			if (update_lsn2 >= ctx->lsn)
+			{
+				pagecount += 1;
+				datapagemap_add(&pagemap, ctx->bid.blocknum % ((BlockNumber) RELSEG_SIZE));
+			}
+		}
 
 		ctx->bid.blocknum += 1;
 	}

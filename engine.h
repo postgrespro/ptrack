@@ -50,7 +50,7 @@ typedef struct PtrackMapHdr
 {
 	/*
 	 * Three magic bytes (+ \0) to be sure, that we are reading ptrack.map
-	 * with a right PtrackMapHdr strucutre.
+	 * with a right PtrackMapHdr structure.
 	 */
 	char		magic[PTRACK_MAGIC_SIZE];
 
@@ -72,7 +72,6 @@ typedef struct PtrackMapHdr
 
 typedef PtrackMapHdr * PtrackMap;
 
-/* TODO: check MAXALIGN usage below */
 /* Number of elements in ptrack map (LSN array)  */
 #define PtrackContentNblocks \
 		((ptrack_map_size - offsetof(PtrackMapHdr, entries) - sizeof(pg_crc32c)) / sizeof(pg_atomic_uint64))
@@ -84,9 +83,10 @@ typedef PtrackMapHdr * PtrackMap;
 /* CRC32 value offset in order to directly access it in the mmap'ed memory chunk */
 #define PtrackCrcOffset (PtrackActualSize - sizeof(pg_crc32c))
 
-/* Map block address 'bid' to map slot */
+/* Block address 'bid' to hash.  To get slot position in map should be divided
+ * with '% PtrackContentNblocks' */
 #define BID_HASH_FUNC(bid) \
-		(size_t)(DatumGetUInt64(hash_any_extended((unsigned char *)&bid, sizeof(bid), 0)) % PtrackContentNblocks)
+		(size_t)(DatumGetUInt64(hash_any_extended((unsigned char *)&bid, sizeof(bid), 0)))
 
 /*
  * Per process pointer to shared ptrack_map
