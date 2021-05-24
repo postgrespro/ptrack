@@ -487,7 +487,7 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 
 	while (true)
 	{
-		size_t		hash;
+		uint64		hash;
 		size_t		slot1;
 		size_t		slot2;
 		XLogRecPtr	update_lsn1;
@@ -535,7 +535,7 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		}
 
 		hash = BID_HASH_FUNC(ctx->bid);
-		slot1 = hash % PtrackContentNblocks;
+		slot1 = (size_t)(hash % PtrackContentNblocks);
 
 		update_lsn1 = pg_atomic_read_u64(&ptrack_map->entries[slot1]);
 
@@ -547,7 +547,7 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		/* Only probe the second slot if the first one is marked */
 		if (update_lsn1 >= ctx->lsn)
 		{
-			slot2 = ((hash << 32) | (hash >> 32)) % PtrackContentNblocks;
+			slot2 = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
 			update_lsn2 = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
 
 			if (update_lsn2 != InvalidXLogRecPtr)

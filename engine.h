@@ -86,7 +86,7 @@ typedef PtrackMapHdr * PtrackMap;
 /* Block address 'bid' to hash.  To get slot position in map should be divided
  * with '% PtrackContentNblocks' */
 #define BID_HASH_FUNC(bid) \
-		(size_t)(DatumGetUInt64(hash_any_extended((unsigned char *)&bid, sizeof(bid), 0)))
+		(DatumGetUInt64(hash_any_extended((unsigned char *)&bid, sizeof(bid), 0)))
 
 /*
  * Per process pointer to shared ptrack_map

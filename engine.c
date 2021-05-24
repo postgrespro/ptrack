@@ -654,7 +654,7 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 				  ForkNumber forknum, BlockNumber blocknum)
 {
 	PtBlockId	bid;
-	size_t		hash;
+	uint64		hash;
 	size_t		slot1;
 	size_t		slot2;
 	XLogRecPtr	new_lsn;
@@ -676,8 +676,8 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 	bid.blocknum = blocknum;
 
 	hash = BID_HASH_FUNC(bid);
-	slot1 = hash % PtrackContentNblocks;
-	slot2 = ((hash << 32) | (hash >> 32)) % PtrackContentNblocks;
+	slot1 = (size_t)(hash % PtrackContentNblocks);
+	slot2 = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
 
 	if (RecoveryInProgress())
 		new_lsn = GetXLogReplayRecPtr(NULL);
