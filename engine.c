@@ -699,10 +699,10 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, slot1, old_lsn.value, new_lsn);
 	while (old_lsn.value < new_lsn &&
 		   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[slot1], (uint64 *) &old_lsn.value, new_lsn));
-	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT, hash, pg_atomic_read_u64(&ptrack_map->entries[slot1]));
 
 	/* And to the second */
 	old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
+	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, slot2, old_lsn.value, new_lsn);
 	while (old_lsn.value < new_lsn &&
 		   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[slot2], (uint64 *) &old_lsn.value, new_lsn));
 }
