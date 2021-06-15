@@ -57,7 +57,7 @@ postgres=# CREATE EXTENSION ptrack;
 
 ## Configuration
 
-The only one configurable option is `ptrack.map_size` (in MB). Default is `-1`, which means `ptrack` is turned off. To completely avoid false positives it is recommended to set `ptrack.map_size` to `1 / 1000` of expected `PGDATA` size (i.e. `1000` for a 1 TB database), since a single 8 byte `ptrack` map record tracks changes in a standard 8 KB PostgreSQL page.
+The only one configurable option is `ptrack.map_size` (in MB). Default is `-1`, which means `ptrack` is turned off. In order to reduce number of false positives it is recommended to set `ptrack.map_size` to `1 / 1000` of expected `PGDATA` size (i.e. `1000` for a 1 TB database).
 
 To disable `ptrack` and clean up all remaining service files set `ptrack.map_size` to `0`.
 
@@ -65,7 +65,7 @@ To disable `ptrack` and clean up all remaining service files set `ptrack.map_siz
 
  * ptrack_version() — returns ptrack version string.
  * ptrack_init_lsn() — returns LSN of the last ptrack map initialization.
- * ptrack_get_pagemapset(start_lsn pg_lsn) — returns a set of changed data files with bitmaps of changed blocks since specified `start_lsn`.
+ * ptrack_get_pagemapset(start_lsn pg_lsn) — returns a set of changed data files with a number of changed blocks and their bitmaps since specified `start_lsn`.
  * ptrack_get_change_stat(start_lsn pg_lsn) — returns statistic of changes (number of files, pages and size in MB) since specified `start_lsn`.
 
 Usage example:
@@ -74,7 +74,7 @@ Usage example:
 postgres=# SELECT ptrack_version();
  ptrack_version 
 ----------------
- 2.1
+ 2.2
 (1 row)
 
 postgres=# SELECT ptrack_init_lsn();
@@ -83,13 +83,21 @@ postgres=# SELECT ptrack_init_lsn();
  0/1814408
 (1 row)
 
-postgres=# SELECT ptrack_get_pagemapset('0/186F4C8');
-           ptrack_get_pagemapset           
--------------------------------------------
- (global/1262,"\\x0100000000000000000000")
- (global/2672,"\\x0200000000000000000000")
- (global/2671,"\\x0200000000000000000000")
-(3 rows)
+postgres=# SELECT * FROM ptrack_get_pagemapset('0/185C8C0');
+        path         | pagecount |                pagemap                 
+---------------------+-----------+----------------------------------------
+ base/16384/1255     |         3 | \x001000000005000000000000
+ base/16384/2674     |         3 | \x0000000900010000000000000000
+ base/16384/2691     |         1 | \x00004000000000000000000000
+ base/16384/2608     |         1 | \x000000000000000400000000000000000000
+ base/16384/2690     |         1 | \x000400000000000000000000
+(5 rows)
+
+postgres=# SELECT * FROM ptrack_get_change_stat('0/285C8C8');
+ files | pages |        size, MB        
+-------+-------+------------------------
+    20 |    25 | 0.19531250000000000000
+(1 row)
 ```
 
 ## Upgrading
