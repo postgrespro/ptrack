@@ -18,7 +18,13 @@ my $res_stdout;
 my $res_stderr;
 
 # Initialize node
-$node = get_new_node('node');
+# Older version of PostgresNode.pm use get_new_node function.
+# Newer use standard perl object constructor syntax
+if (PostgresNode->can('get_new_node')) {
+	$node = get_new_node('node');
+} else {
+	$node = PostgresNode->new("node");
+}
 $node->init;
 $node->start;
 
