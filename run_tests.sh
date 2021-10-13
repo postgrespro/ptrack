@@ -105,7 +105,7 @@ else
 
     # Setup python environment
     echo "############### Setting up python env"
-    virtualenv pyenv
+    virtualenv --python=/usr/bin/python3 pyenv
     source pyenv/bin/activate
     pip install testgres==1.8.2
 
@@ -118,10 +118,10 @@ else
 
     if [ "$TEST_CASE" = "all" ]; then
         # Run all pg_probackup ptrack tests
-        python -m unittest -v tests.ptrack || status=$?
+        python3 -m unittest -v tests.ptrack || status=$?
     else
         for i in `seq $TEST_REPEATS`; do
-            python -m unittest -v tests.ptrack.PtrackTest.$TEST_CASE || status=$?
+            python3 -m unittest -v tests.ptrack.PtrackTest.$TEST_CASE || status=$?
         done
     fi
 
