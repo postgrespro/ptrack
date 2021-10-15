@@ -12,7 +12,7 @@ It is designed to allow false positives (i.e. block/page is marked in the `ptrac
 
 Currently, `ptrack` codebase is split between small PostgreSQL core patch and extension. All public SQL API methods and main engine are placed in the `ptrack` extension, while the core patch contains only certain hooks and modifies binary utilities to ignore `ptrack.map.*` files.
 
-This extension is compatible with PostgreSQL [11](https://github.com/postgrespro/ptrack/blob/master/patches/REL_11_STABLE-ptrack-core.diff), [12](https://github.com/postgrespro/ptrack/blob/master/patches/REL_12_STABLE-ptrack-core.diff), [13](https://github.com/postgrespro/ptrack/blob/master/patches/REL_13_STABLE-ptrack-core.diff).
+This extension is compatible with PostgreSQL [11](https://github.com/postgrespro/ptrack/blob/master/patches/REL_11_STABLE-ptrack-core.diff), [12](https://github.com/postgrespro/ptrack/blob/master/patches/REL_12_STABLE-ptrack-core.diff), [13](https://github.com/postgrespro/ptrack/blob/master/patches/REL_13_STABLE-ptrack-core.diff), [14](https://github.com/postgrespro/ptrack/blob/master/patches/REL_14_STABLE-ptrack-core.diff).
 
 ## Installation
 
@@ -25,13 +25,13 @@ git clone https://github.com/postgrespro/ptrack.git
 2) Get latest PostgreSQL sources:
 
 ```shell
-git clone https://github.com/postgres/postgres.git -b REL_12_STABLE && cd postgres
+git clone https://github.com/postgres/postgres.git -b REL_14_STABLE && cd postgres
 ```
 
 3) Apply PostgreSQL core patch:
 
 ```shell
-git apply -3 ../ptrack/patches/REL_12_STABLE-ptrack-core.diff
+git apply -3 ../ptrack/patches/REL_14_STABLE-ptrack-core.diff
 ```
 
 4) Compile and install PostgreSQL
@@ -151,8 +151,8 @@ Feel free to [send pull requests](https://github.com/postgrespro/ptrack/compare)
 Everything is tested automatically with [travis-ci.com](https://travis-ci.com/postgrespro/ptrack) and [codecov.io](https://codecov.io/gh/postgrespro/ptrack), but you can also run tests locally via `Docker`:
 
 ```sh
-export PG_VERSION=12
-export PG_BRANCH=REL_12_STABLE
+export PG_VERSION=14
+export PG_BRANCH=REL_14_STABLE
 export TEST_CASE=all
 export MODE=paranoia
 
