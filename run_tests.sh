@@ -97,6 +97,13 @@ if [ "$TEST_CASE" = "tap" ]; then
     fi
 
 else
+    # Show kernel params (used for debugging -- probackup tests)
+    echo "############### kernel params:"
+    cat /proc/sys/kernel/yama/ptrace_scope
+    sysctl kernel.yama.ptrace_scope=0
+    cat /proc/sys/kernel/yama/ptrace_scope
+    sudo sysctl kernel.yama.ptrace_scope=0
+    cat /proc/sys/kernel/yama/ptrace_scope
 
     # Build and install pg_probackup
     echo "############### Compiling and installing pg_probackup"
