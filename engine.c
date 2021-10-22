@@ -394,7 +394,17 @@ ptrackCheckpoint(void)
 	 *
 	 * Write both magic and varsion_num at once.
 	 */
-	ptrack_write_chunk(ptrack_tmp_fd, &crc, (char *) &ptrack_map->magic,
+
+	/*
+	 * Previously we read from the field magic, now we read from the beginning
+	 * of the structure PtrackMapHdr. Make sure nothing has changed since then.
+	 */
+	StaticAssertStmt(
+		offsetof(PtrackMapHdr, magic) == 0,
+		"old write format for PtrackMapHdr.magic and PtrackMapHdr.version_num "
+		"is not upward-compatible");
+
+	ptrack_write_chunk(ptrack_tmp_fd, &crc, (char *) ptrack_map,
 					   offsetof(PtrackMapHdr, init_lsn));
 
 	init_lsn = pg_atomic_read_u64(&ptrack_map->init_lsn);
