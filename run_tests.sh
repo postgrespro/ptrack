@@ -116,6 +116,7 @@ else
         export PG_PROBACKUP_PARANOIA=ON
     fi
 
+    export PG_PROBACKUP_PTRACK=ON
     if [ "$TEST_CASE" = "all" ]; then
         # Run all pg_probackup ptrack tests
         python3 -m unittest -v tests.ptrack || status=$?
