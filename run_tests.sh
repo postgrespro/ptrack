@@ -75,7 +75,6 @@ echo "############### Compiling and installing ptrack extension"
 
 # XXX: Hackish way to make possible to run tap tests
 mkdir $PG_SRC/contrib/ptrack
-cp * $PG_SRC/contrib/ptrack/
 cp -R t $PG_SRC/contrib/ptrack/
 
 make USE_PGXS=1 PG_CPPFLAGS="-coverage" SHLIB_LINK="-coverage" -C $PG_SRC/contrib/ptrack/ install
@@ -104,6 +103,7 @@ else
     cat /proc/sys/kernel/yama/ptrace_scope
     sudo sysctl kernel.yama.ptrace_scope=0
     cat /proc/sys/kernel/yama/ptrace_scope
+    ls -l /usr/sbin
 
     # Build and install pg_probackup
     echo "############### Compiling and installing pg_probackup"
