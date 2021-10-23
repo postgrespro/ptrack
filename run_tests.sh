@@ -74,8 +74,9 @@ cd ..
 echo "############### Compiling and installing ptrack extension"
 
 # XXX: Hackish way to make possible to run tap tests
-mkdir $PG_SRC/contrib/ptrack
-cp -R t $PG_SRC/contrib/ptrack/
+#mkdir $PG_SRC/contrib/ptrack
+#cp -R t $PG_SRC/contrib/ptrack/
+ln -s `pwd` $PG_SRC/contrib/ptrack
 
 make USE_PGXS=1 PG_CPPFLAGS="-coverage" SHLIB_LINK="-coverage" -C $PG_SRC/contrib/ptrack/ install
 
