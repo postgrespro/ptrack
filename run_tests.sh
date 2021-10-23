@@ -103,6 +103,8 @@ else
     cat /proc/sys/kernel/yama/ptrace_scope
     sudo sysctl kernel.yama.ptrace_scope=0
     cat /proc/sys/kernel/yama/ptrace_scope
+    sudo sh -c 'echo 0 > /proc/sys/kernel/yama/ptrace_scope'
+    cat /proc/sys/kernel/yama/ptrace_scope
     ls -l /usr/sbin
 
     # Build and install pg_probackup
