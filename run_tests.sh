@@ -100,9 +100,9 @@ else
 
     if [ "${TEST_CASE}" = "all" ]; then
         # Run all pg_probackup ptrack tests
-	PBK_TEST_CASE=tests.ptrack
+        PBK_TEST_CASE=tests.ptrack
     else
-	PBK_TEST_CASE=tests.ptrack.PtrackTest.${TEST_CASE}
+        PBK_TEST_CASE=tests.ptrack.PtrackTest.${TEST_CASE}
     fi
     for i in `seq ${TEST_REPEATS}`; do
         python3 -m unittest -v ${PBK_TEST_CASE} || status=$?
@@ -112,6 +112,10 @@ else
     deactivate
 fi
 
+#########################################################
+# codecov
+echo "############### Codecov"
+cd ${PTRACK_SRC}
 # Generate *.gcov files
 gcov ${PG_SRC}/contrib/ptrack/*.c ${PG_SRC}/contrib/ptrack/*.h
 
