@@ -5,21 +5,21 @@ RUN apt-get update
 RUN apt-get -yq install python python-pip python-virtualenv
 
 # Environment
-ENV PG_MAJOR=${PG_VERSION} PG_BRANCH=${PG_BRANCH}
-ENV LANG=C.UTF-8 PGHOME=/pg/testdir/pgbin
+ENV PG_BRANCH=${PG_BRANCH}
+ENV LANG=C.UTF-8 PGHOME=/testdir/pgbin
 ENV MODE=${MODE} TEST_CASE=${TEST_CASE} TEST_REPEATS=${TEST_REPEATS}
 
 # Make directories
-RUN	mkdir -p /pg/testdir
+RUN	mkdir -p /testdir
 
 COPY run_tests.sh /run.sh
 RUN chmod 755 /run.sh
 
-COPY . /pg/testdir
-WORKDIR /pg/testdir
+COPY . /testdir/ptrack
+WORKDIR /testdir
 
 # Grant privileges
-RUN	chown -R postgres:postgres /pg/testdir
+RUN	chown -R postgres:postgres /testdir
 
 USER postgres
 ENTRYPOINT /run.sh

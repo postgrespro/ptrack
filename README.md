@@ -151,7 +151,6 @@ Feel free to [send pull requests](https://github.com/postgrespro/ptrack/compare)
 Everything is tested automatically with [travis-ci.com](https://travis-ci.com/postgrespro/ptrack) and [codecov.io](https://codecov.io/gh/postgrespro/ptrack), but you can also run tests locally via `Docker`:
 
 ```sh
-export PG_VERSION=14
 export PG_BRANCH=REL_14_STABLE
 export TEST_CASE=all
 export MODE=paranoia
