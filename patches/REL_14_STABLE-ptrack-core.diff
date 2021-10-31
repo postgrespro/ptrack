@@ -1,14 +1,17 @@
-commit a14ac459d71528c64df00c693e9c71ac70d3ba29
-Author: anastasia <a.lubennikova@postgrespro.ru>
-Date:   Mon Oct 19 14:53:06 2020 +0300
+commit 31aad7adad5d9f977e3a3623108ff81b82181d68
+Author: Anton A. Melnikov <a.melnikov@postgrespro.ru>
+Date:   Fri Oct 29 08:45:13 2021 +0300
 
-    add ptrack 2.0
+    [PGPRO-5771] Add handler for COMP_CRC32C and restore pg_comp_crc32c
+    pointer definition.
+    
+    Tags: ptrack
 
 diff --git a/src/backend/replication/basebackup.c b/src/backend/replication/basebackup.c
-index 50ae1f16d0..721b926ad2 100644
+index e09108d0ec..6858c7b670 100644
 --- a/src/backend/replication/basebackup.c
 +++ b/src/backend/replication/basebackup.c
-@@ -233,6 +233,13 @@ static const struct exclude_list_item excludeFiles[] =
+@@ -225,6 +225,13 @@ static const struct exclude_list_item excludeFiles[] =
  	{"postmaster.pid", false},
  	{"postmaster.opts", false},
  
@@ -22,7 +25,7 @@ index 50ae1f16d0..721b926ad2 100644
  	/* end of list */
  	{NULL, false}
  };
-@@ -248,6 +255,11 @@ static const struct exclude_list_item noChecksumFiles[] = {
+@@ -240,6 +247,11 @@ static const struct exclude_list_item noChecksumFiles[] = {
  	{"pg_filenode.map", false},
  	{"pg_internal.init", true},
  	{"PG_VERSION", false},
@@ -35,7 +38,7 @@ index 50ae1f16d0..721b926ad2 100644
  	{"config_exec_params", true},
  #endif
 diff --git a/src/backend/storage/file/copydir.c b/src/backend/storage/file/copydir.c
-index 0cf598dd0c..c9c44a4ae7 100644
+index da8b7cbeca..6a817f45a5 100644
 --- a/src/backend/storage/file/copydir.c
 +++ b/src/backend/storage/file/copydir.c
 @@ -27,6 +27,8 @@
@@ -58,7 +61,7 @@ index 0cf598dd0c..c9c44a4ae7 100644
  	 * Be paranoid here and fsync all files to ensure the copy is really done.
  	 * But if fsync is disabled, we're done.
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
-index 0eacd461cd..c2ef404a1a 100644
+index b4bca7eed6..90d479526c 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
 @@ -87,6 +87,8 @@ typedef struct _MdfdVec
@@ -70,7 +73,7 @@ index 0eacd461cd..c2ef404a1a 100644
  
  /* Populate a file tag describing an md.c segment file. */
  #define INIT_MD_FILETAG(a,xx_rnode,xx_forknum,xx_segno) \
-@@ -435,6 +437,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+@@ -463,6 +465,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  		register_dirty_segment(reln, forknum, v);
  
  	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
@@ -80,7 +83,7 @@ index 0eacd461cd..c2ef404a1a 100644
  }
  
  /*
-@@ -721,6 +726,9 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+@@ -749,6 +754,9 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  
  	if (!skipFsync && !SmgrIsTemp(reln))
  		register_dirty_segment(reln, forknum, v);
@@ -91,10 +94,10 @@ index 0eacd461cd..c2ef404a1a 100644
  
  /*
 diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
-index 3ded2cdd71..3a596a59f7 100644
+index bc3ceb2712..6c72d24c95 100644
 --- a/src/backend/storage/sync/sync.c
 +++ b/src/backend/storage/sync/sync.c
-@@ -75,6 +75,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
+@@ -78,6 +78,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
  static CycleCtr sync_cycle_ctr = 0;
  static CycleCtr checkpoint_cycle_ctr = 0;
  
@@ -103,7 +106,7 @@ index 3ded2cdd71..3a596a59f7 100644
  /* Intervals for calling AbsorbSyncRequests */
  #define FSYNCS_PER_ABSORB		10
  #define UNLINKS_PER_ABSORB		10
-@@ -420,6 +422,9 @@ ProcessSyncRequests(void)
+@@ -441,6 +443,9 @@ ProcessSyncRequests(void)
  	CheckpointStats.ckpt_longest_sync = longest;
  	CheckpointStats.ckpt_agg_sync_time = total_elapsed;
  
@@ -114,10 +117,10 @@ index 3ded2cdd71..3a596a59f7 100644
  	sync_in_progress = false;
  }
 diff --git a/src/backend/utils/misc/guc.c b/src/backend/utils/misc/guc.c
-index 1683629ee3..d2fc154576 100644
+index 6652a60ec3..051cd6359d 100644
 --- a/src/backend/utils/misc/guc.c
 +++ b/src/backend/utils/misc/guc.c
-@@ -620,7 +620,6 @@ static char *recovery_target_xid_string;
+@@ -659,7 +659,6 @@ static char *recovery_target_xid_string;
  static char *recovery_target_name_string;
  static char *recovery_target_lsn_string;
  
@@ -126,7 +129,7 @@ index 1683629ee3..d2fc154576 100644
  char	   *role_string;
  
 diff --git a/src/bin/pg_checksums/pg_checksums.c b/src/bin/pg_checksums/pg_checksums.c
-index ffdc23945c..7ae95866ce 100644
+index 831cf42d3a..891302ba2f 100644
 --- a/src/bin/pg_checksums/pg_checksums.c
 +++ b/src/bin/pg_checksums/pg_checksums.c
 @@ -114,6 +114,11 @@ static const struct exclude_list_item skip[] = {
@@ -142,10 +145,10 @@ index ffdc23945c..7ae95866ce 100644
  	{"config_exec_params", true},
  #endif
 diff --git a/src/bin/pg_resetwal/pg_resetwal.c b/src/bin/pg_resetwal/pg_resetwal.c
-index 233441837f..cf7bd073bf 100644
+index f8d5ecb6ad..4027bdf3df 100644
 --- a/src/bin/pg_resetwal/pg_resetwal.c
 +++ b/src/bin/pg_resetwal/pg_resetwal.c
-@@ -84,6 +84,7 @@ static void RewriteControlFile(void);
+@@ -85,6 +85,7 @@ static void RewriteControlFile(void);
  static void FindEndOfXLOG(void);
  static void KillExistingXLOG(void);
  static void KillExistingArchiveStatus(void);
@@ -153,7 +156,7 @@ index 233441837f..cf7bd073bf 100644
  static void WriteEmptyXLOG(void);
  static void usage(void);
  
-@@ -513,6 +514,7 @@ main(int argc, char *argv[])
+@@ -522,6 +523,7 @@ main(int argc, char *argv[])
  	RewriteControlFile();
  	KillExistingXLOG();
  	KillExistingArchiveStatus();
@@ -161,7 +164,7 @@ index 233441837f..cf7bd073bf 100644
  	WriteEmptyXLOG();
  
  	printf(_("Write-ahead log reset\n"));
-@@ -1102,6 +1104,53 @@ KillExistingArchiveStatus(void)
+@@ -1111,6 +1113,53 @@ KillExistingArchiveStatus(void)
  	}
  }
  
@@ -216,10 +219,10 @@ index 233441837f..cf7bd073bf 100644
  /*
   * Write an empty XLOG file, containing only the checkpoint record
 diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
-index fbb97b5cf1..6cd7f2ae3e 100644
+index 2618b4c957..bbba813fe7 100644
 --- a/src/bin/pg_rewind/filemap.c
 +++ b/src/bin/pg_rewind/filemap.c
-@@ -124,6 +124,10 @@ static const struct exclude_list_item excludeFiles[] =
+@@ -158,6 +158,10 @@ static const struct exclude_list_item excludeFiles[] =
  	{"postmaster.pid", false},
  	{"postmaster.opts", false},
  
@@ -230,11 +233,37 @@ index fbb97b5cf1..6cd7f2ae3e 100644
  	/* end of list */
  	{NULL, false}
  };
+diff --git a/src/common/checksum_helper.c b/src/common/checksum_helper.c
+index 431e247d59..3d042ebb77 100644
+--- a/src/common/checksum_helper.c
++++ b/src/common/checksum_helper.c
+@@ -230,3 +230,9 @@ pg_checksum_final(pg_checksum_context *context, uint8 *output)
+ 	Assert(retval <= PG_CHECKSUM_MAX_LENGTH);
+ 	return retval;
+ }
++
++pg_crc32c pg_comp_crc32c_handler(pg_crc32c *crc, const void *data, size_t len)
++{
++	COMP_CRC32C(*crc, data, len);
++	return *crc;
++}
+diff --git a/src/include/common/checksum_helper.h b/src/include/common/checksum_helper.h
+index cac7570ea1..3f7287371b 100644
+--- a/src/include/common/checksum_helper.h
++++ b/src/include/common/checksum_helper.h
+@@ -68,5 +68,7 @@ extern int	pg_checksum_init(pg_checksum_context *, pg_checksum_type);
+ extern int	pg_checksum_update(pg_checksum_context *, const uint8 *input,
+ 							   size_t len);
+ extern int	pg_checksum_final(pg_checksum_context *, uint8 *output);
++extern pg_crc32c
++pg_comp_crc32c_handler(pg_crc32c *crc, const void *data, size_t len);
+ 
+ #endif
 diff --git a/src/include/miscadmin.h b/src/include/miscadmin.h
-index 72e3352398..5c2e016501 100644
+index 3f155ce4f8..ce8dc0bee5 100644
 --- a/src/include/miscadmin.h
 +++ b/src/include/miscadmin.h
-@@ -388,7 +388,7 @@ typedef enum ProcessingMode
+@@ -401,7 +401,7 @@ typedef enum ProcessingMode
  	NormalProcessing			/* normal processing */
  } ProcessingMode;
  
@@ -244,25 +273,19 @@ index 72e3352398..5c2e016501 100644
  #define IsBootstrapProcessingMode() (Mode == BootstrapProcessing)
  #define IsInitProcessingMode()		(Mode == InitProcessing)
 diff --git a/src/include/port/pg_crc32c.h b/src/include/port/pg_crc32c.h
-index 3c6f906683..a7355f7ad1 100644
+index f3c4107ff9..05b2e63775 100644
 --- a/src/include/port/pg_crc32c.h
 +++ b/src/include/port/pg_crc32c.h
-@@ -69,8 +69,11 @@ extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t le
- #define FIN_CRC32C(crc) ((crc) ^= 0xFFFFFFFF)
+@@ -70,7 +70,6 @@ extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t le
  
  extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
--extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
+ extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
 -
-+extern
-+#ifndef FRONTEND
-+PGDLLIMPORT
-+#endif
-+pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
  #ifdef USE_SSE42_CRC32C_WITH_RUNTIME_CHECK
  extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t len);
  #endif
 diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
-index 5d28f59c1d..0d3f04d8af 100644
+index 2c3936b0da..c6691c0be0 100644
 --- a/src/include/storage/copydir.h
 +++ b/src/include/storage/copydir.h
 @@ -13,6 +13,9 @@
@@ -276,7 +299,7 @@ index 5d28f59c1d..0d3f04d8af 100644
  extern void copy_file(char *fromfile, char *tofile);
  
 diff --git a/src/include/storage/md.h b/src/include/storage/md.h
-index 07fd1bb7d0..5294811bc8 100644
+index 752b440864..61c18a169f 100644
 --- a/src/include/storage/md.h
 +++ b/src/include/storage/md.h
 @@ -19,6 +19,13 @@
@@ -294,10 +317,10 @@ index 07fd1bb7d0..5294811bc8 100644
  extern void mdinit(void);
  extern void mdopen(SMgrRelation reln);
 diff --git a/src/include/storage/sync.h b/src/include/storage/sync.h
-index e16ab8e711..88da9686eb 100644
+index fbdf34f762..455de202b6 100644
 --- a/src/include/storage/sync.h
 +++ b/src/include/storage/sync.h
-@@ -50,6 +50,9 @@ typedef struct FileTag
+@@ -55,6 +55,9 @@ typedef struct FileTag
  	uint32		segno;
  } FileTag;
  
