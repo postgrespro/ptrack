@@ -1,9 +1,9 @@
-commit 31aad7adad5d9f977e3a3623108ff81b82181d68
+commit 84a43938a670336fbb203b85c7f5ea15d642aec2
 Author: Anton A. Melnikov <a.melnikov@postgrespro.ru>
 Date:   Fri Oct 29 08:45:13 2021 +0300
 
-    [PGPRO-5771] Add handler for COMP_CRC32C and restore pg_comp_crc32c
-    pointer definition.
+    [PGPRO-5771] Add wrapper function for COMP_CRC32C and restore
+    pg_comp_crc32c pointer definition.
     
     Tags: ptrack
 
@@ -234,7 +234,7 @@ index 2618b4c957..bbba813fe7 100644
  	{NULL, false}
  };
 diff --git a/src/common/checksum_helper.c b/src/common/checksum_helper.c
-index 431e247d59..3d042ebb77 100644
+index 431e247d59..405247a597 100644
 --- a/src/common/checksum_helper.c
 +++ b/src/common/checksum_helper.c
 @@ -230,3 +230,9 @@ pg_checksum_final(pg_checksum_context *context, uint8 *output)
@@ -242,13 +242,13 @@ index 431e247d59..3d042ebb77 100644
  	return retval;
  }
 +
-+pg_crc32c pg_comp_crc32c_handler(pg_crc32c *crc, const void *data, size_t len)
++pg_crc32c comp_crc32c(pg_crc32c *crc, const void *data, size_t len)
 +{
 +	COMP_CRC32C(*crc, data, len);
 +	return *crc;
 +}
 diff --git a/src/include/common/checksum_helper.h b/src/include/common/checksum_helper.h
-index cac7570ea1..3f7287371b 100644
+index cac7570ea1..8c002860cf 100644
 --- a/src/include/common/checksum_helper.h
 +++ b/src/include/common/checksum_helper.h
 @@ -68,5 +68,7 @@ extern int	pg_checksum_init(pg_checksum_context *, pg_checksum_type);
@@ -256,7 +256,7 @@ index cac7570ea1..3f7287371b 100644
  							   size_t len);
  extern int	pg_checksum_final(pg_checksum_context *, uint8 *output);
 +extern pg_crc32c
-+pg_comp_crc32c_handler(pg_crc32c *crc, const void *data, size_t len);
++comp_crc32c(pg_crc32c *crc, const void *data, size_t len);
  
  #endif
 diff --git a/src/include/miscadmin.h b/src/include/miscadmin.h
