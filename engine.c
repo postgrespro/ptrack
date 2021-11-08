@@ -32,7 +32,7 @@
 #include "catalog/pg_tablespace.h"
 #include "miscadmin.h"
 #ifdef WIN32
-#include "common/checksum_helper.h"
+#include "storage/checksum.h"
 #else
 #include "port/pg_crc32c.h"
 #endif
