@@ -1,11 +1,8 @@
-commit 84a43938a670336fbb203b85c7f5ea15d642aec2
+commit 6b7ba7c634fb34bfaad63b0b9184fb57584880db
 Author: Anton A. Melnikov <a.melnikov@postgrespro.ru>
-Date:   Fri Oct 29 08:45:13 2021 +0300
+Date:   Mon Nov 8 09:19:07 2021 +0300
 
-    [PGPRO-5771] Add wrapper function for COMP_CRC32C and restore
-    pg_comp_crc32c pointer definition.
-    
-    Tags: ptrack
+    [PGPRO-5771] Add handler for COMP_CRC32C and restore pg_comp_crc32c pointer definition.
 
 diff --git a/src/backend/replication/basebackup.c b/src/backend/replication/basebackup.c
 index e09108d0ec..6858c7b670 100644
@@ -14,7 +11,7 @@ index e09108d0ec..6858c7b670 100644
 @@ -225,6 +225,13 @@ static const struct exclude_list_item excludeFiles[] =
  	{"postmaster.pid", false},
  	{"postmaster.opts", false},
- 
+
 +	/*
 +	 * Skip all transient ptrack files, but do copy ptrack.map, since it may
 +	 * be successfully used immediately after backup. TODO: check, test?
@@ -44,7 +41,7 @@ index da8b7cbeca..6a817f45a5 100644
 @@ -27,6 +27,8 @@
  #include "storage/copydir.h"
  #include "storage/fd.h"
- 
+
 +copydir_hook_type copydir_hook = NULL;
 +
  /*
@@ -53,7 +50,7 @@ index da8b7cbeca..6a817f45a5 100644
 @@ -78,6 +80,9 @@ copydir(char *fromdir, char *todir, bool recurse)
  	}
  	FreeDir(xldir);
- 
+
 +	if (copydir_hook)
 +		copydir_hook(todir);
 +
@@ -65,51 +62,51 @@ index b4bca7eed6..90d479526c 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
 @@ -87,6 +87,8 @@ typedef struct _MdfdVec
- 
+
  static MemoryContext MdCxt;		/* context for all MdfdVec objects */
- 
+
 +mdextend_hook_type mdextend_hook = NULL;
 +mdwrite_hook_type mdwrite_hook = NULL;
- 
+
  /* Populate a file tag describing an md.c segment file. */
  #define INIT_MD_FILETAG(a,xx_rnode,xx_forknum,xx_segno) \
 @@ -463,6 +465,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  		register_dirty_segment(reln, forknum, v);
- 
+
  	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
 +
 +	if (mdextend_hook)
 +		mdextend_hook(reln->smgr_rnode, forknum, blocknum);
  }
- 
+
  /*
 @@ -749,6 +754,9 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
- 
+
  	if (!skipFsync && !SmgrIsTemp(reln))
  		register_dirty_segment(reln, forknum, v);
 +
 +	if (mdwrite_hook)
 +		mdwrite_hook(reln->smgr_rnode, forknum, blocknum);
  }
- 
+
  /*
 diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
-index bc3ceb2712..6c72d24c95 100644
+index a12b357275..e52c2910f7 100644
 --- a/src/backend/storage/sync/sync.c
 +++ b/src/backend/storage/sync/sync.c
-@@ -78,6 +78,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
+@@ -79,6 +79,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
  static CycleCtr sync_cycle_ctr = 0;
  static CycleCtr checkpoint_cycle_ctr = 0;
- 
+
 +ProcessSyncRequests_hook_type ProcessSyncRequests_hook = NULL;
 +
  /* Intervals for calling AbsorbSyncRequests */
  #define FSYNCS_PER_ABSORB		10
  #define UNLINKS_PER_ABSORB		10
-@@ -441,6 +443,9 @@ ProcessSyncRequests(void)
+@@ -465,6 +467,9 @@ ProcessSyncRequests(void)
  	CheckpointStats.ckpt_longest_sync = longest;
  	CheckpointStats.ckpt_agg_sync_time = total_elapsed;
- 
+
 +	if (ProcessSyncRequests_hook)
 +		ProcessSyncRequests_hook();
 +
@@ -123,11 +120,11 @@ index 6652a60ec3..051cd6359d 100644
 @@ -659,7 +659,6 @@ static char *recovery_target_xid_string;
  static char *recovery_target_name_string;
  static char *recovery_target_lsn_string;
- 
+
 -
  /* should be static, but commands/variable.c needs to get at this */
  char	   *role_string;
- 
+
 diff --git a/src/bin/pg_checksums/pg_checksums.c b/src/bin/pg_checksums/pg_checksums.c
 index 831cf42d3a..891302ba2f 100644
 --- a/src/bin/pg_checksums/pg_checksums.c
@@ -155,19 +152,19 @@ index f8d5ecb6ad..4027bdf3df 100644
 +static void KillExistingPtrack(void);
  static void WriteEmptyXLOG(void);
  static void usage(void);
- 
+
 @@ -522,6 +523,7 @@ main(int argc, char *argv[])
  	RewriteControlFile();
  	KillExistingXLOG();
  	KillExistingArchiveStatus();
 +	KillExistingPtrack();
  	WriteEmptyXLOG();
- 
+
  	printf(_("Write-ahead log reset\n"));
 @@ -1111,6 +1113,53 @@ KillExistingArchiveStatus(void)
  	}
  }
- 
+
 +/*
 + * Remove existing ptrack files
 + */
@@ -215,7 +212,7 @@ index f8d5ecb6ad..4027bdf3df 100644
 +	}
 +}
 +
- 
+
  /*
   * Write an empty XLOG file, containing only the checkpoint record
 diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
@@ -225,7 +222,7 @@ index 2618b4c957..bbba813fe7 100644
 @@ -158,6 +158,10 @@ static const struct exclude_list_item excludeFiles[] =
  	{"postmaster.pid", false},
  	{"postmaster.opts", false},
- 
+
 +	{"ptrack.map.mmap", false},
 +	{"ptrack.map", false},
 +	{"ptrack.map.tmp", false},
@@ -233,32 +230,6 @@ index 2618b4c957..bbba813fe7 100644
  	/* end of list */
  	{NULL, false}
  };
-diff --git a/src/common/checksum_helper.c b/src/common/checksum_helper.c
-index 431e247d59..405247a597 100644
---- a/src/common/checksum_helper.c
-+++ b/src/common/checksum_helper.c
-@@ -230,3 +230,9 @@ pg_checksum_final(pg_checksum_context *context, uint8 *output)
- 	Assert(retval <= PG_CHECKSUM_MAX_LENGTH);
- 	return retval;
- }
-+
-+pg_crc32c comp_crc32c(pg_crc32c *crc, const void *data, size_t len)
-+{
-+	COMP_CRC32C(*crc, data, len);
-+	return *crc;
-+}
-diff --git a/src/include/common/checksum_helper.h b/src/include/common/checksum_helper.h
-index cac7570ea1..8c002860cf 100644
---- a/src/include/common/checksum_helper.h
-+++ b/src/include/common/checksum_helper.h
-@@ -68,5 +68,7 @@ extern int	pg_checksum_init(pg_checksum_context *, pg_checksum_type);
- extern int	pg_checksum_update(pg_checksum_context *, const uint8 *input,
- 							   size_t len);
- extern int	pg_checksum_final(pg_checksum_context *, uint8 *output);
-+extern pg_crc32c
-+comp_crc32c(pg_crc32c *crc, const void *data, size_t len);
- 
- #endif
 diff --git a/src/include/miscadmin.h b/src/include/miscadmin.h
 index 3f155ce4f8..ce8dc0bee5 100644
 --- a/src/include/miscadmin.h
@@ -266,24 +237,50 @@ index 3f155ce4f8..ce8dc0bee5 100644
 @@ -401,7 +401,7 @@ typedef enum ProcessingMode
  	NormalProcessing			/* normal processing */
  } ProcessingMode;
- 
+
 -extern ProcessingMode Mode;
 +extern PGDLLIMPORT ProcessingMode Mode;
- 
+
  #define IsBootstrapProcessingMode() (Mode == BootstrapProcessing)
  #define IsInitProcessingMode()		(Mode == InitProcessing)
-diff --git a/src/include/port/pg_crc32c.h b/src/include/port/pg_crc32c.h
-index f3c4107ff9..05b2e63775 100644
---- a/src/include/port/pg_crc32c.h
-+++ b/src/include/port/pg_crc32c.h
-@@ -70,7 +70,6 @@ extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t le
- 
- extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
- extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
--
- #ifdef USE_SSE42_CRC32C_WITH_RUNTIME_CHECK
- extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t len);
- #endif
+diff --git a/src/include/storage/checksum.h b/src/include/storage/checksum.h
+index 80d2359192..ac55286088 100644
+--- a/src/include/storage/checksum.h
++++ b/src/include/storage/checksum.h
+@@ -14,6 +14,7 @@
+ #define CHECKSUM_H
+
+ #include "storage/block.h"
++#include "port/pg_crc32c.h"
+
+ /*
+  * Compute the checksum for a Postgres page.  The page must be aligned on a
+@@ -21,4 +22,11 @@
+  */
+ extern uint16 pg_checksum_page(char *page, BlockNumber blkno);
+
++/*
++* Wrapper function for COMP_CRC32C macro. Was added to avoid
++* FRONTEND macro use for pg_comp_crc32c pointer in windows build.
++*/
++extern pg_crc32c
++comp_crc32c(pg_crc32c *crc, const void *data, size_t len);
++
+ #endif							/* CHECKSUM_H */
+diff --git a/src/include/storage/checksum_impl.h b/src/include/storage/checksum_impl.h
+index ef30268330..19a0248538 100644
+--- a/src/include/storage/checksum_impl.h
++++ b/src/include/storage/checksum_impl.h
+@@ -213,3 +213,9 @@ pg_checksum_page(char *page, BlockNumber blkno)
+ 	 */
+ 	return (uint16) ((checksum % 65535) + 1);
+ }
++
++pg_crc32c comp_crc32c(pg_crc32c *crc, const void *data, size_t len)
++{
++	COMP_CRC32C(*crc, data, len);
++	return *crc;
++}
 diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
 index 2c3936b0da..c6691c0be0 100644
 --- a/src/include/storage/copydir.h
@@ -291,13 +288,13 @@ index 2c3936b0da..c6691c0be0 100644
 @@ -13,6 +13,9 @@
  #ifndef COPYDIR_H
  #define COPYDIR_H
- 
+
 +typedef void (*copydir_hook_type) (const char *path);
 +extern PGDLLIMPORT copydir_hook_type copydir_hook;
 +
  extern void copydir(char *fromdir, char *todir, bool recurse);
  extern void copy_file(char *fromfile, char *tofile);
- 
+
 diff --git a/src/include/storage/md.h b/src/include/storage/md.h
 index 752b440864..61c18a169f 100644
 --- a/src/include/storage/md.h
@@ -305,7 +302,7 @@ index 752b440864..61c18a169f 100644
 @@ -19,6 +19,13 @@
  #include "storage/smgr.h"
  #include "storage/sync.h"
- 
+
 +typedef void (*mdextend_hook_type) (RelFileNodeBackend smgr_rnode,
 +									ForkNumber forknum, BlockNumber blocknum);
 +extern PGDLLIMPORT mdextend_hook_type mdextend_hook;
@@ -323,7 +320,7 @@ index fbdf34f762..455de202b6 100644
 @@ -55,6 +55,9 @@ typedef struct FileTag
  	uint32		segno;
  } FileTag;
- 
+
 +typedef void (*ProcessSyncRequests_hook_type) (void);
 +extern PGDLLIMPORT ProcessSyncRequests_hook_type ProcessSyncRequests_hook;
 +
