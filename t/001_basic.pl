@@ -6,25 +6,52 @@
 
 use strict;
 use warnings;
-use PostgresNode;
-use TestLib;
 use Test::More;
 
+my $pg_15_modules;
+
+BEGIN
+{
+	$pg_15_modules = eval
+	{
+		require PostgreSQL::Test::Cluster;
+		require PostgreSQL::Test::Utils;
+		return 1;
+	};
+
+	unless (defined $pg_15_modules)
+	{
+		$pg_15_modules = 0;
+
+		require PostgresNode;
+		require TestLib;
+	}
+}
+
 plan tests => 24;
+
+note('PostgreSQL 15 modules are used: ' . ($pg_15_modules ? 'yes' : 'no'));
 
 my $node;
 my $res;
 my $res_stdout;
 my $res_stderr;
 
-# Initialize node
-# Older version of PostgresNode.pm use get_new_node function.
-# Newer use standard perl object constructor syntax
-if (PostgresNode->can('get_new_node')) {
-	$node = get_new_node('node');
-} else {
-	$node = PostgresNode->new("node");
-}
+# Create node.
+# Older versions of PostgreSQL modules use get_new_node function.
+# Newer use standard perl object constructor syntax.
+eval
+{
+	if ($pg_15_modules)
+	{
+		$node = PostgreSQL::Test::Cluster->new("node");
+	}
+	else
+	{
+		$node = PostgresNode::get_new_node("node");
+	}
+};
+
 $node->init;
 $node->start;
 
