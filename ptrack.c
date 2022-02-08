@@ -2,14 +2,13 @@
  * ptrack.c
  *		Block level incremental backup engine
  *
- * Copyright (c) 2019-2020, Postgres Professional
+ * Copyright (c) 2019-2022, Postgres Professional
  *
  * IDENTIFICATION
  *	  ptrack/ptrack.c
  *
  * INTERFACE ROUTINES (PostgreSQL side)
  *	  ptrackMapInit()          --- allocate new shared ptrack_map
- *	  ptrackMapAttach()        --- attach to the existing ptrack_map
  *	  assign_ptrack_map_size() --- ptrack_map_size GUC assign callback
  *	  ptrack_walkdir()         --- walk directory and mark all blocks of all
  *	                               data files in ptrack_map
@@ -17,7 +16,7 @@
  *
  * Currently ptrack has following public API methods:
  *
- * # ptrack_version                  --- returns ptrack version string (2.0 currently).
+ * # ptrack_version                  --- returns ptrack version string (2.3 currently).
  * # ptrack_get_pagemapset('LSN')    --- returns a set of changed data files with
  * 										 bitmaps of changed blocks since specified LSN.
  * # ptrack_init_lsn                 --- returns LSN of the last ptrack map initialization.
@@ -42,6 +41,7 @@
 #include "replication/basebackup.h"
 #endif
 #include "storage/copydir.h"
+#include "storage/ipc.h"
 #include "storage/lmgr.h"
 #if PG_VERSION_NUM >= 120000
 #include "storage/md.h"
@@ -58,10 +58,11 @@
 
 PG_MODULE_MAGIC;
 
-PtrackMap	ptrack_map = NULL;
-uint64		ptrack_map_size;
-int			ptrack_map_size_tmp;
+PtrackMap		ptrack_map = NULL;
+uint64			ptrack_map_size = 0;
+int				ptrack_map_size_tmp;
 
+static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static copydir_hook_type prev_copydir_hook = NULL;
 static mdwrite_hook_type prev_mdwrite_hook = NULL;
 static mdextend_hook_type prev_mdextend_hook = NULL;
@@ -70,6 +71,7 @@ static ProcessSyncRequests_hook_type prev_ProcessSyncRequests_hook = NULL;
 void		_PG_init(void);
 void		_PG_fini(void);
 
+static void ptrack_shmem_startup_hook(void);
 static void ptrack_copydir_hook(const char *path);
 static void ptrack_mdwrite_hook(RelFileNodeBackend smgr_rnode,
 								ForkNumber forkno, BlockNumber blkno);
@@ -103,15 +105,23 @@ _PG_init(void)
 							"Sets the size of ptrack map in MB used for incremental backup (0 disabled).",
 							NULL,
 							&ptrack_map_size_tmp,
-							-1,
-							-1, 32 * 1024, /* limit to 32 GB */
-							PGC_POSTMASTER,
 							0,
+							0, 32 * 1024, /* limit to 32 GB */
+							PGC_POSTMASTER,
+							GUC_UNIT_MB,
 							NULL,
 							assign_ptrack_map_size,
 							NULL);
 
+	/* Request server shared memory */
+	if (ptrack_map_size != 0)
+		RequestAddinShmemSpace(PtrackActualSize);
+	else
+		ptrackCleanFiles();
+
 	/* Install hooks */
+	prev_shmem_startup_hook = shmem_startup_hook;
+	shmem_startup_hook = ptrack_shmem_startup_hook;
 	prev_copydir_hook = copydir_hook;
 	copydir_hook = ptrack_copydir_hook;
 	prev_mdwrite_hook = mdwrite_hook;
@@ -129,10 +139,46 @@ void
 _PG_fini(void)
 {
 	/* Uninstall hooks */
+	shmem_startup_hook = prev_shmem_startup_hook;
 	copydir_hook = prev_copydir_hook;
 	mdwrite_hook = prev_mdwrite_hook;
 	mdextend_hook = prev_mdextend_hook;
 	ProcessSyncRequests_hook = prev_ProcessSyncRequests_hook;
+}
+
+/*
+ * ptrack_shmem_startup hook: allocate or attach to shared memory.
+ */
+static void
+ptrack_shmem_startup_hook(void)
+{
+	bool map_found;
+
+	if (prev_shmem_startup_hook)
+		prev_shmem_startup_hook();
+
+	/*
+	 * Create or attach to the shared memory state
+	 */
+	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
+
+	if (ptrack_map_size != 0)
+	{
+		ptrack_map = ShmemInitStruct("ptrack map",
+									PtrackActualSize,
+									&map_found);
+		if (!map_found)
+		{
+			ptrackMapInit();
+			elog(DEBUG1, "Shared memory for ptrack is ready");
+		}
+	}
+	else
+	{
+		ptrack_map = NULL;
+	}
+
+	LWLockRelease(AddinShmemInitLock);
 }
 
 /*

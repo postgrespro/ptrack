@@ -4,6 +4,7 @@
  *	  header for ptrack map for tracking updates of relation's pages
  *
  *
+ * Copyright (c) 2019-2022, Postgres Professional
  * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -23,9 +24,6 @@
 /*  #include "utils/relcache.h" */
 #include "access/hash.h"
 
-
-/* Working copy of ptrack.map */
-#define PTRACK_MMAP_PATH "global/ptrack.map.mmap"
 /* Persistent copy of ptrack.map to restore after crash */
 #define PTRACK_PATH "global/ptrack.map"
 /* Used for atomical crash-safe update of ptrack.map */
@@ -36,6 +34,9 @@
  * buffer size for disk writes.  On fast NVMe SSD it gives
  * around 20% increase in ptrack checkpoint speed compared
  * to PTRACK_BUF_SIZE == 1000, i.e. 8 KB writes.
+ * (PTRACK_BUS_SIZE is a count of pg_atomic_uint64)
+ *
+ * NOTE: but POSIX defines _POSIX_SSIZE_MAX as 32767 (bytes)
  */
 #define PTRACK_BUF_SIZE ((uint64) 8000)
 
@@ -80,7 +81,7 @@ typedef PtrackMapHdr * PtrackMap;
 #define PtrackActualSize \
 		(offsetof(PtrackMapHdr, entries) + PtrackContentNblocks * sizeof(pg_atomic_uint64) + sizeof(pg_crc32c))
 
-/* CRC32 value offset in order to directly access it in the mmap'ed memory chunk */
+/* CRC32 value offset in order to directly access it in the shared memory chunk */
 #define PtrackCrcOffset (PtrackActualSize - sizeof(pg_crc32c))
 
 /* Block address 'bid' to hash.  To get slot position in map should be divided
@@ -97,12 +98,13 @@ extern PtrackMap ptrack_map;
  * Size of ptrack map in bytes
  * TODO: to be protected by PtrackResizeLock?
  */
-extern uint64 ptrack_map_size;
+extern uint64	ptrack_map_size;
+extern uint64  *ptrack_map_size_requested_at_startup;
 extern int	ptrack_map_size_tmp;
 
 extern void ptrackCheckpoint(void);
 extern void ptrackMapInit(void);
-extern void ptrackMapAttach(void);
+extern void ptrackCleanFiles(void);
 
 extern void assign_ptrack_map_size(int newval, void *extra);
 
