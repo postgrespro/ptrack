@@ -209,19 +209,9 @@ ptrackMapReadFromFile(const char *ptrack_path)
 
 		if (!EQ_CRC32C(*file_crc, crc))
 		{
-			/*
-			 * This is ERROR now, because tests.ptrack.PtrackTest.test_corrupt_ptrack_map
-			 * threats this as error with exact error message
-			 * see https://github.com/postgrespro/pg_probackup/blob/a454bd7d63e1329b2c46db6a71aa263ac7621cc6/tests/ptrack.py#L4378
-			 */
-			/*ereport(WARNING,
+			ereport(WARNING,
 					(errcode(ERRCODE_DATA_CORRUPTED),
 					 errmsg("ptrack read map: incorrect checksum of file \"%s\"", ptrack_path),
-					 errdetail("Deleting file \"%s\" and reinitializing ptrack map.", ptrack_path)));
-			*/
-			ereport(ERROR,
-					(errcode(ERRCODE_DATA_CORRUPTED),
-					 errmsg("ptrack init: incorrect checksum of file \"%s\"", ptrack_path),
 					 errdetail("Deleting file \"%s\" and reinitializing ptrack map.", ptrack_path)));
 			return false;
 		}
@@ -300,21 +290,6 @@ ptrackMapInit(void)
 		 * Last part of memory representation of ptrack_map (crc) is actually unused
 		 * so leave it as it is
 		 */
-	}
-
-	/*
-	 * Very ugly fix:
-	 * create empty old mmap'ed file to make tests.ptrack.PtrackTest.test_corrupt_ptrack_map happy
-	 * see https://github.com/postgrespro/pg_probackup/blob/a454bd7d63e1329b2c46db6a71aa263ac7621cc6/tests/ptrack.py#L4341
-	 *
-	 * TODO: remove this shit
-	 */
-	elog(WARNING, "ptrack init: not production ready code!");
-	{
-		char old_file[MAXPGPATH];
-		sprintf(old_file, "%s/global/ptrack.map.mmap", DataDir);
-		unlink(old_file);
-		copy_file("/dev/null", old_file);
 	}
 }
 
