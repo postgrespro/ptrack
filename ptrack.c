@@ -58,9 +58,9 @@
 
 PG_MODULE_MAGIC;
 
-PtrackMap		ptrack_map = NULL;
-uint64			ptrack_map_size = 0;
-int				ptrack_map_size_tmp;
+PtrackMap	ptrack_map = NULL;
+uint64		ptrack_map_size = 0;
+int			ptrack_map_size_tmp;
 
 static shmem_startup_hook_type prev_shmem_startup_hook = NULL;
 static copydir_hook_type prev_copydir_hook = NULL;

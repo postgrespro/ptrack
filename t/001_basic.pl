@@ -155,7 +155,6 @@ $node->restart;
 # Check that we have lost everything
 ok(! -f $node->data_dir . "/global/ptrack.map", "ptrack.map should be cleaned up");
 ok(! -f $node->data_dir . "/global/ptrack.map.tmp", "ptrack.map.tmp should be cleaned up");
-ok(! -f $node->data_dir . "/global/ptrack.map.mmap", "ptrack.map.mmap should be cleaned up");
 
 ($res, $res_stdout, $res_stderr) = $node->psql("postgres", "SELECT ptrack_get_pagemapset('0/0')");
 is($res, 3, 'errors out if ptrack is disabled');

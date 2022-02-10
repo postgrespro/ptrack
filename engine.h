@@ -98,8 +98,7 @@ extern PtrackMap ptrack_map;
  * Size of ptrack map in bytes
  * TODO: to be protected by PtrackResizeLock?
  */
-extern uint64	ptrack_map_size;
-extern uint64  *ptrack_map_size_requested_at_startup;
+extern uint64 ptrack_map_size;
 extern int	ptrack_map_size_tmp;
 
 extern void ptrackCheckpoint(void);
