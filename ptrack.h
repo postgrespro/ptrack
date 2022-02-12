@@ -26,8 +26,8 @@
 #define PTRACK_VERSION "2.3"
 /* Ptrack version as a number */
 #define PTRACK_VERSION_NUM 230
-/* Ptrack version of file that we can read from disk */
-#define PTRACK_COMPATIBLE_VERSION_NUM 220
+/* Last ptrack version that changed map file format */
+#define PTRACK_MAP_FILE_VERSION_NUM 220
 
 /*
  * Structure identifying block on the disk.

@@ -145,18 +145,18 @@ ptrackMapReadFromFile(const char *ptrack_path)
 
 			if (last_readed > 0)
 			{
-					readed += last_readed;
+				readed += last_readed;
 			}
 			else if (last_readed == 0)
 			{
 				/*
 				 * We don't try to read more that PtrackActualSize and
-				 * file size was alreay checked in ptrackMapInit()
+				 * file size was already checked in ptrackMapInit()
 				 */
 				elog(ERROR, "ptrack read map: unexpected end of file while reading map file \"%s\", expected to read %zu, but read only %zu bytes",
 							ptrack_path, PtrackActualSize, readed);
 			}
-			else if (last_readed < 0)
+			else if (last_readed < 0 && errno != EINTR)
 			{
 				ereport(WARNING,
 						(errcode_for_file_access(),
@@ -164,8 +164,6 @@ ptrackMapReadFromFile(const char *ptrack_path)
 				close(ptrack_fd);
 				return false;
 			}
-
-			readed += last_readed;
 		} while (readed < PtrackActualSize);
 
 		close(ptrack_fd);
@@ -179,12 +177,12 @@ ptrackMapReadFromFile(const char *ptrack_path)
 	}
 
 	/* Check ptrack version inside old ptrack map */
-	if (ptrack_map->version_num < PTRACK_COMPATIBLE_VERSION_NUM)
+	if (ptrack_map->version_num != PTRACK_MAP_FILE_VERSION_NUM)
 	{
 		ereport(WARNING,
 				(errcode(ERRCODE_DATA_CORRUPTED),
-				 errmsg("ptrack read map: map format version %d in the file \"%s\" is incompatible with loaded version %d",
-						ptrack_map->version_num, ptrack_path, PTRACK_VERSION_NUM),
+				 errmsg("ptrack read map: map format version %d in the file \"%s\" is incompatible with file format of extension %d",
+						ptrack_map->version_num, ptrack_path, PTRACK_MAP_FILE_VERSION_NUM),
 				 errdetail("Deleting file \"%s\" and reinitializing ptrack map.", ptrack_path)));
 		return false;
 	}
@@ -266,20 +264,12 @@ ptrackMapInit(void)
 	}
 
 	/*
-	 * Unconditionally update version
-	 * This is usefull if we have read early compatible version of map
-	 */
-	ptrack_map->version_num = PTRACK_VERSION_NUM;
-
-	/*
 	 * Initialyze memory for new map
 	 */
 	if (is_new_map)
 	{
 		memcpy(ptrack_map->magic, PTRACK_MAGIC, PTRACK_MAGIC_SIZE);
-		/*
-		 * Weird PtrackMapHdr.init_lsn type?
-		 */
+		ptrack_map->version_num = PTRACK_MAP_FILE_VERSION_NUM;
 		ptrack_map->init_lsn.value = InvalidXLogRecPtr;
 		/*
 		 * Fill entries with InvalidXLogRecPtr
