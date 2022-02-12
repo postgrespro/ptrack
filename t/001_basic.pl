@@ -10,7 +10,7 @@ use PostgresNode;
 use TestLib;
 use Test::More;
 
-plan tests => 24;
+plan tests => 23;
 
 my $node;
 my $res;
