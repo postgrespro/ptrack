@@ -26,12 +26,15 @@
 #include <sys/mman.h>
 #endif
 
+#include <aio.h>
+
 #include "access/htup_details.h"
 #include "access/parallel.h"
 #include "access/xlog.h"
 #include "catalog/pg_tablespace.h"
 #include "miscadmin.h"
 #include "port/pg_crc32c.h"
+#include "portability/instr_time.h"
 #include "storage/copydir.h"
 #if PG_VERSION_NUM >= 120000
 #include "storage/md.h"
@@ -116,10 +119,20 @@ ptrackCleanFiles(void)
  * This function is called only at startup,
  * so data is read directly (without synchronization).
  */
+#ifndef PTRACK_USE_AIO
+#define ptrackMapReadFromFile ptrackMapReadFromFileSync
+#else
+#define ptrackMapReadFromFile ptrackMapReadFromFileAsync
+#endif
+
+#ifndef PTRACK_USE_AIO
 static bool
-ptrackMapReadFromFile(const char *ptrack_path)
+ptrackMapReadFromFileSync(const char *ptrack_path)
 {
-	elog(DEBUG1, "ptrack read map");
+	instr_time	func_start, func_end, crc_start, func_time, read_time, crc_time;
+
+	elog(LOG, "ptrack read map (sync version): start, ptrack_actual_size %zu bytes", PtrackActualSize);
+	INSTR_TIME_SET_CURRENT(func_start);
 
 	/* Do actual file read */
 	{
@@ -169,6 +182,8 @@ ptrackMapReadFromFile(const char *ptrack_path)
 		close(ptrack_fd);
 	}
 
+	INSTR_TIME_SET_CURRENT(crc_start);
+
 	/* Check PTRACK_MAGIC */
 	if (strcmp(ptrack_map->magic, PTRACK_MAGIC) != 0)
 	{
@@ -215,8 +230,214 @@ ptrackMapReadFromFile(const char *ptrack_path)
 		}
 	}
 
+	INSTR_TIME_SET_CURRENT(func_end);
+
+	INSTR_TIME_SET_ZERO(func_time);
+	INSTR_TIME_ACCUM_DIFF(func_time, func_end, func_start);
+	INSTR_TIME_SET_ZERO(read_time);
+	INSTR_TIME_ACCUM_DIFF(read_time, crc_start, func_start);
+	INSTR_TIME_SET_ZERO(crc_time);
+	INSTR_TIME_ACCUM_DIFF(crc_time, func_end, crc_start);
+	elog(LOG, "ptrack read map (sync version): end. Timings (microseconds): file io time = %lu, crc time = %lu, overall time = %lu", 
+			INSTR_TIME_GET_MICROSEC(read_time), INSTR_TIME_GET_MICROSEC(crc_time), INSTR_TIME_GET_MICROSEC(func_time));
 	return true;
 }
+#endif
+
+#ifdef PTRACK_USE_AIO
+static bool
+ptrackMapReadFromFileAsync(const char *ptrack_path)
+{
+	instr_time	func_start, func_end, func_time,
+				aio_start, aio_end, aio_time,
+				crc_start, crc_end, crc_time;
+	int			ptrack_fd;
+	pg_crc32c	crc;
+	pg_crc32c  *file_crc;
+	char	   *read_ptr = (char *) ptrack_map;
+	char	   *readed_ptr = (char *) ptrack_map;
+	char	   *crc_ptr  = (char *) ptrack_map;
+	struct aiocb	io_requests[PTRACK_AIO_READ_QUEUE_DEPTH];
+	int			io_requests_head = 0;
+	int			io_requests_tail = 0;
+	int			io_pending_requests = 0;
+	size_t		to_read;
+
+	elog(LOG, "ptrack read map (AIO version): start, ptrack_actual_size %zu bytes, aio_read_size %zu, aio_queue_size %i",
+					PtrackActualSize, (size_t) PTRACK_AIO_READ_CHUNK, PTRACK_AIO_READ_QUEUE_DEPTH);
+	INSTR_TIME_SET_ZERO(func_time);
+	INSTR_TIME_SET_ZERO(aio_time);
+	INSTR_TIME_SET_ZERO(crc_time);
+	INSTR_TIME_SET_CURRENT(func_start);
+
+	INSTR_TIME_SET_CURRENT(aio_start);
+	ptrack_fd = BasicOpenFile(ptrack_path, O_RDWR | PG_BINARY);
+	if (ptrack_fd < 0)
+		elog(ERROR, "ptrack read map: failed to open map file \"%s\": %m", ptrack_path);
+	INSTR_TIME_SET_CURRENT(aio_end);
+	INSTR_TIME_ACCUM_DIFF(aio_time, aio_end, aio_start);
+
+	INSTR_TIME_SET_CURRENT(crc_start);
+	INIT_CRC32C(crc);
+	file_crc = (pg_crc32c *) ((char *) ptrack_map + PtrackCrcOffset);
+	INSTR_TIME_SET_CURRENT(crc_end);
+	INSTR_TIME_ACCUM_DIFF(crc_time, crc_end, crc_start);
+
+	do
+	{
+		to_read = Min(PTRACK_AIO_READ_CHUNK, PtrackActualSize - (read_ptr - (char *) ptrack_map));
+
+		// Wait AIO read for completion
+		// if there no more space in queue
+		if (io_pending_requests == PTRACK_AIO_READ_QUEUE_DEPTH || to_read == 0)
+		{
+			int rc;
+			const struct aiocb *wait_op = &(io_requests[io_requests_tail]);
+			struct timespec timeout = { .tv_sec = 0, .tv_nsec = PTRACK_AIO_SUSPEND_TIMEOUT_NS };
+			INSTR_TIME_SET_CURRENT(aio_start);
+			// we always wait only one (most early) operation
+			do
+			{
+				elog(DEBUG1, "ptrack read map: aio_suspend: io_requests_tail = %i, io_pending_requests = %i",
+							io_requests_tail, io_pending_requests);
+				rc = aio_suspend(&wait_op, 1, &timeout);
+				if (rc != 0 && errno != EAGAIN && errno != EINTR)
+				{
+					elog(ERROR, "ptrack read map: failed to call aio_suspend: %m");
+				}
+			} while(rc != 0);
+			INSTR_TIME_SET_CURRENT(aio_end);
+			INSTR_TIME_ACCUM_DIFF(aio_time, aio_end, aio_start);
+		}
+
+		// Try to consume AIO operation
+		// and advance readed_ptr
+		if (io_pending_requests > 0)
+		{
+			int rc;
+			INSTR_TIME_SET_CURRENT(aio_start);
+
+			elog(DEBUG1, "ptrack read map: aio_error: io_requests_tail = %i, io_pending_requests = %i",
+						io_requests_tail, io_pending_requests);
+			rc = aio_error(&(io_requests[io_requests_tail]));
+			if (rc == 0)
+			{
+				io_pending_requests--;
+				rc = aio_return(&(io_requests[io_requests_tail]));
+				if (rc > 0)
+				{
+					readed_ptr += rc;
+					io_requests_tail = (io_requests_tail + 1) % PTRACK_AIO_READ_QUEUE_DEPTH;
+				}
+				else
+				{
+					elog(ERROR, "ptrack read map: failed to call aio_return: %m");
+				}
+			}
+			else if (rc == EINPROGRESS)
+			{
+				elog(DEBUG1, "ptrack read map: aio_error: operation still in progress, io_requests_tail = %i, io_pending_requests = %i",
+						io_requests_tail, io_pending_requests);
+			}
+			else
+			{
+				elog(ERROR, "ptrack read map: failed to call aio_error: %m");
+			}
+			INSTR_TIME_SET_CURRENT(aio_end);
+			INSTR_TIME_ACCUM_DIFF(aio_time, aio_end, aio_start);
+		}
+
+		// Put AIO request if needed and if there is room for it
+		// and advance read_ptr
+		if (io_pending_requests < PTRACK_AIO_READ_QUEUE_DEPTH && to_read > 0)
+		{
+			int rc;
+			INSTR_TIME_SET_CURRENT(aio_start);
+			memset(&(io_requests[io_requests_head]), 0, sizeof(io_requests[0]));
+			io_requests[io_requests_head] = (struct aiocb) {
+				.aio_fildes = ptrack_fd,
+				.aio_offset = read_ptr - (char *) ptrack_map,
+				.aio_buf = read_ptr,
+				.aio_nbytes = to_read,
+				.aio_reqprio = 0,
+				.aio_sigevent = {
+						.sigev_notify = SIGEV_NONE,
+						// fill other fields, see sigevent(7)
+				},
+				.aio_lio_opcode = LIO_NOP,
+			};
+			elog(DEBUG1, "ptrack read map: aio_read: io_requests_head = %i, .aio_offset = %zu, .aio_nbytes = %zu, io_pending_requests = %i",
+							io_requests_head, io_requests[io_requests_head].aio_offset, io_requests[io_requests_head].aio_nbytes, io_pending_requests + 1);
+			rc = aio_read(&(io_requests[io_requests_head]));
+			// check errors!
+			read_ptr += to_read;
+			io_pending_requests++;
+			io_requests_head = (io_requests_head + 1) % PTRACK_AIO_READ_QUEUE_DEPTH;
+			INSTR_TIME_SET_CURRENT(aio_end);
+			INSTR_TIME_ACCUM_DIFF(aio_time, aio_end, aio_start);
+		}
+
+		// Calculate CRC (and advance crc_ptr)
+		if (crc_ptr < Min(readed_ptr, (char *) file_crc))
+		{
+			size_t crc_chunk_size = Min(readed_ptr, (char *) file_crc) - crc_ptr;
+			INSTR_TIME_SET_CURRENT(crc_start);
+			elog(DEBUG1, "ptrack read map: COMP_CRC32C: offset = %zu, nbytes = %zu",
+							crc_ptr - (char *) ptrack_map, crc_chunk_size);
+			COMP_CRC32C(crc, crc_ptr, crc_chunk_size);
+			crc_ptr += crc_chunk_size;
+			INSTR_TIME_SET_CURRENT(crc_end);
+			INSTR_TIME_ACCUM_DIFF(crc_time, crc_end, crc_start);
+		}
+	} while (crc_ptr < (char *) file_crc || to_read > 0);
+
+	INSTR_TIME_SET_CURRENT(aio_start);
+	close(ptrack_fd);
+	INSTR_TIME_SET_CURRENT(aio_end);
+	INSTR_TIME_ACCUM_DIFF(aio_time, aio_end, aio_start);
+
+	INSTR_TIME_SET_CURRENT(crc_start);
+	/* Check PTRACK_MAGIC */
+	if (strcmp(ptrack_map->magic, PTRACK_MAGIC) != 0)
+	{
+		elog(WARNING, "ptrack read map: wrong map format of file \"%s\"", ptrack_path);
+		return false;
+	}
+
+	/* Check ptrack version inside old ptrack map */
+	if (ptrack_map->version_num != PTRACK_MAP_FILE_VERSION_NUM)
+	{
+		ereport(WARNING,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("ptrack read map: map format version %d in the file \"%s\" is incompatible with file format of extension %d",
+						ptrack_map->version_num, ptrack_path, PTRACK_MAP_FILE_VERSION_NUM),
+				 errdetail("Deleting file \"%s\" and reinitializing ptrack map.", ptrack_path)));
+		return false;
+	}
+
+	/* Check CRC */
+	FIN_CRC32C(crc);
+	elog(DEBUG1, "ptrack read map: crc %u, file_crc %u, init_lsn %X/%X",
+		 crc, *file_crc, (uint32) (ptrack_map->init_lsn.value >> 32), (uint32) ptrack_map->init_lsn.value);
+
+	if (!EQ_CRC32C(*file_crc, crc))
+	{
+		ereport(WARNING,
+				(errcode(ERRCODE_DATA_CORRUPTED),
+				 errmsg("ptrack read map: incorrect checksum of file \"%s\"", ptrack_path),
+				 errdetail("Deleting file \"%s\" and reinitializing ptrack map.", ptrack_path)));
+		return false;
+	}
+	INSTR_TIME_SET_CURRENT(crc_end);
+	INSTR_TIME_ACCUM_DIFF(crc_time, crc_end, crc_start);
+
+	INSTR_TIME_SET_CURRENT(func_end);
+	INSTR_TIME_ACCUM_DIFF(func_time, func_end, func_start);
+	elog(LOG, "ptrack read map (AIO version): end. Timings (microseconds): file aio calls time = %lu, crc time = %lu, overall time = %lu", 
+			INSTR_TIME_GET_MICROSEC(aio_time), INSTR_TIME_GET_MICROSEC(crc_time), INSTR_TIME_GET_MICROSEC(func_time));
+	return true;
+}
+#endif
 
 /*
  * Read PTRACK_PATH file into already allocated shared memory, check header and checksum

@@ -89,6 +89,22 @@ typedef PtrackMapHdr * PtrackMap;
 #define BID_HASH_FUNC(bid) \
 		(DatumGetUInt64(hash_any_extended((unsigned char *)&bid, sizeof(bid), 0)))
 
+/* async io section*/
+
+/* use aio ptrack map read if defined */
+#define PTRACK_USE_AIO
+
+/* size of one async read operation (bytes) */
+#define PTRACK_AIO_READ_CHUNK 1024*1024
+
+/* maximum count of pending aio read operations */
+#define PTRACK_AIO_READ_QUEUE_DEPTH 4
+
+/* aio_suspend timeout parameter value (in nanoseconds, ie 5E7 is 50 milliseconds. can't be more or equal to 1 second) */
+#define PTRACK_AIO_SUSPEND_TIMEOUT_NS 5E7
+
+/* end of async io section */
+
 /*
  * Per process pointer to shared ptrack_map
  */
