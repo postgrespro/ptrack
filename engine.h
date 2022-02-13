@@ -92,10 +92,13 @@ typedef PtrackMapHdr * PtrackMap;
 /* async io section*/
 
 /* use aio ptrack map read if defined */
-#define PTRACK_USE_AIO
+//#define PTRACK_USE_AIO
 
 /* size of one async read operation (bytes) */
-#define PTRACK_AIO_READ_CHUNK 1024*1024
+#define PTRACK_AIO_READ_CHUNK 2*1024*1024
+
+/* size of one sync read operation (bytes), or try to read whole file if undefined */
+#define PTRACK_READ_CHUNK 1024*1024
 
 /* maximum count of pending aio read operations */
 #define PTRACK_AIO_READ_QUEUE_DEPTH 4
