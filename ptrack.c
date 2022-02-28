@@ -34,13 +34,17 @@
 #endif
 #include "catalog/pg_tablespace.h"
 #include "catalog/pg_type.h"
+#ifdef PGPRO_EE
+/* For file_is_in_cfs_tablespace() only. */
+#if PG_VERSION_NUM >= 140000
+#include "common/cfs_common.h"
+#else
+#include "common/controldata_utils.h"
+#endif /* PG_VERSION_NUM */
+#endif /* PGPRO_EE */
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "nodes/pg_list.h"
-#ifdef PGPRO_EE
-/* For file_is_in_cfs_tablespace() only. */
-#include "replication/basebackup.h"
-#endif
 #include "storage/copydir.h"
 #include "storage/lmgr.h"
 #if PG_VERSION_NUM >= 120000
