@@ -4,6 +4,7 @@
  *	  header for ptrack map for tracking updates of relation's pages
  *
  *
+ * Copyright (c) 2019-2022, Postgres Professional
  * Portions Copyright (c) 1996-2019, PostgreSQL Global Development Group
  * Portions Copyright (c) 1994, Regents of the University of California
  *
@@ -22,9 +23,11 @@
 #include "utils/relcache.h"
 
 /* Ptrack version as a string */
-#define PTRACK_VERSION "2.2"
+#define PTRACK_VERSION "2.3"
 /* Ptrack version as a number */
-#define PTRACK_VERSION_NUM 220
+#define PTRACK_VERSION_NUM 230
+/* Last ptrack version that changed map file format */
+#define PTRACK_MAP_FILE_VERSION_NUM 220
 
 /*
  * Structure identifying block on the disk.

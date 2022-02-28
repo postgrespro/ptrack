@@ -56,6 +56,7 @@ pg_config
 # Build and install ptrack extension
 echo "############### Compiling and installing ptrack extension"
 cp --recursive ${PTRACK_SRC} ${PG_SRC}/contrib/ptrack
+make USE_PGXS=1 --directory=${PG_SRC}/contrib/ptrack/ clean
 make USE_PGXS=1 PG_CPPFLAGS="-coverage" SHLIB_LINK="-coverage" --directory=${PG_SRC}/contrib/ptrack/ install
 
 if [ "${TEST_CASE}" = "tap" ]; then

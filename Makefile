@@ -5,8 +5,8 @@ OBJS = ptrack.o datapagemap.o engine.o $(WIN32RES)
 PGFILEDESC = "ptrack - block-level incremental backup engine"
 
 EXTENSION = ptrack
-EXTVERSION = 2.2
-DATA = ptrack--2.1.sql ptrack--2.0--2.1.sql ptrack--2.1--2.2.sql
+EXTVERSION = 2.3
+DATA = ptrack--2.1.sql ptrack--2.0--2.1.sql ptrack--2.1--2.2.sql ptrack--2.2--2.3.sql
 
 TAP_TESTS = 1
 
