@@ -39,6 +39,10 @@
 #endif
 #include "storage/reinit.h"
 #include "storage/smgr.h"
+#if PG_VERSION_NUM >= 150000
+#include "storage/fd.h"
+#include "access/xlogrecovery.h"
+#endif
 #include "utils/array.h"
 #include "utils/builtins.h"
 #include "utils/pg_lsn.h"
