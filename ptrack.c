@@ -106,7 +106,11 @@ _PG_init(void)
 							NULL,
 							&ptrack_map_size_tmp,
 							0,
+#if SIZEOF_SIZE_T == 8
 							0, 32 * 1024, /* limit to 32 GB */
+#else
+							0, 256, /* limit to 256 MB */
+#endif
 							PGC_POSTMASTER,
 							GUC_UNIT_MB,
 							NULL,

@@ -154,7 +154,7 @@ ptrackMapReadFromFile(const char *ptrack_path)
 				 * file size was already checked in ptrackMapInit()
 				 */
 				elog(ERROR, "ptrack read map: unexpected end of file while reading map file \"%s\", expected to read %zu, but read only %zu bytes",
-							ptrack_path, PtrackActualSize, readed);
+							ptrack_path, (size_t)PtrackActualSize, readed);
 			}
 			else if (last_readed < 0 && errno != EINTR)
 			{
