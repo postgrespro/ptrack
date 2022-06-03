@@ -1,7 +1,7 @@
 /* ptrack/ptrack--2.1--2.2.sql */
 
 -- Complain if script is sourced in psql, rather than via ALTER EXTENSION
-\echo Use "ALTER EXTENSION ptrack UPDATE;" to load this file.\ quit
+\echo Use "ALTER EXTENSION ptrack UPDATE;" to load this file. \quit
 
 DROP FUNCTION ptrack_get_pagemapset(start_lsn pg_lsn);
 CREATE FUNCTION ptrack_get_pagemapset(start_lsn pg_lsn)
