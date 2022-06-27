@@ -502,7 +502,7 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		XLogRecPtr	update_lsn2;
 
 		/* Stop traversal if there are no more segments */
-		if (ctx->bid.blocknum + 1 > ctx->relsize)
+		if (ctx->bid.blocknum >= ctx->relsize)
 		{
 			/* We completed a segment and there is a bitmap to return */
 			if (pagemap.bitmap != NULL)
