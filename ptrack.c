@@ -418,6 +418,14 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 		return ptrack_filelist_getnext(ctx);
 	}
 
+	if (fst.st_size == 0)
+	{
+		elog(WARNING, "ptrack: skip empty file %s", fullpath);
+
+		/* But try the next one */
+		return ptrack_filelist_getnext(ctx);
+	}
+
 	if (pfl->segno > 0)
 	{
 		ctx->relsize = pfl->segno * RELSEG_SIZE + fst.st_size / BLCKSZ;
@@ -544,7 +552,7 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		XLogRecPtr	update_lsn2;
 
 		/* Stop traversal if there are no more segments */
-		if (ctx->bid.blocknum > ctx->relsize)
+		if (ctx->bid.blocknum >= ctx->relsize)
 		{
 			/* We completed a segment and there is a bitmap to return */
 			if (pagemap.bitmap != NULL)
@@ -576,12 +584,9 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 				if (htup)
 					SRF_RETURN_NEXT(funcctx, HeapTupleGetDatum(htup));
 			}
-			else
-			{
-				/* We have just processed unchanged file, let's pick next */
-				if (ptrack_filelist_getnext(ctx) < 0)
-					SRF_RETURN_DONE(funcctx);
-			}
+
+			if (ptrack_filelist_getnext(ctx) < 0)
+				SRF_RETURN_DONE(funcctx);
 		}
 
 		hash = BID_HASH_FUNC(ctx->bid);
