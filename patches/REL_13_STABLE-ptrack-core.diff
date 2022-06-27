@@ -113,18 +113,6 @@ index 3ded2cdd71..3a596a59f7 100644
  	/* Flag successful completion of ProcessSyncRequests */
  	sync_in_progress = false;
  }
-diff --git a/src/backend/utils/misc/guc.c b/src/backend/utils/misc/guc.c
-index 1683629ee3..d2fc154576 100644
---- a/src/backend/utils/misc/guc.c
-+++ b/src/backend/utils/misc/guc.c
-@@ -620,7 +620,6 @@ static char *recovery_target_xid_string;
- static char *recovery_target_name_string;
- static char *recovery_target_lsn_string;
- 
--
- /* should be static, but commands/variable.c needs to get at this */
- char	   *role_string;
- 
 diff --git a/src/bin/pg_checksums/pg_checksums.c b/src/bin/pg_checksums/pg_checksums.c
 index ffdc23945c..7ae95866ce 100644
 --- a/src/bin/pg_checksums/pg_checksums.c
