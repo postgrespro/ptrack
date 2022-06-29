@@ -29,6 +29,10 @@
 #include "access/htup_details.h"
 #include "access/parallel.h"
 #include "access/xlog.h"
+#if PG_VERSION_NUM >= 150000
+#include "access/xlogrecovery.h"
+#include "storage/fd.h"
+#endif
 #include "catalog/pg_tablespace.h"
 #include "miscadmin.h"
 #include "port/pg_crc32c.h"
