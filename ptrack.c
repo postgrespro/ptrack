@@ -81,6 +81,10 @@ static void ptrack_ProcessSyncRequests_hook(void);
 
 static void ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid);
 static int	ptrack_filelist_getnext(PtScanCtx * ctx);
+#if PG_VERSION_NUM >= 150000
+static shmem_request_hook_type prev_shmem_request_hook = NULL;
+static void ptrack_shmem_request(void);
+#endif
 
 /*
  * Module load callback
@@ -119,7 +123,14 @@ _PG_init(void)
 
 	/* Request server shared memory */
 	if (ptrack_map_size != 0)
+	{
+#if PG_VERSION_NUM >= 150000
+		prev_shmem_request_hook = shmem_request_hook;
+		shmem_request_hook = ptrack_shmem_request;
+#else
 		RequestAddinShmemSpace(PtrackActualSize);
+#endif
+	}
 	else
 		ptrackCleanFiles();
 
@@ -135,6 +146,17 @@ _PG_init(void)
 	prev_ProcessSyncRequests_hook = ProcessSyncRequests_hook;
 	ProcessSyncRequests_hook = ptrack_ProcessSyncRequests_hook;
 }
+
+#if PG_VERSION_NUM >= 150000
+static void
+ptrack_shmem_request(void)
+{
+	if (prev_shmem_request_hook)
+		prev_shmem_request_hook();
+
+	RequestAddinShmemSpace(PtrackActualSize);
+}
+#endif
 
 /*
  * Module unload callback
