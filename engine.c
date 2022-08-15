@@ -501,7 +501,7 @@ static void
 ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 				 const char *filepath, const char *filename)
 {
-	RelFileNodeBackend rnode;
+	RelFileLocatorBackend rnode;
 	ForkNumber	forknum;
 	BlockNumber blkno,
 				nblocks = 0;
@@ -516,22 +516,22 @@ ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 	/* Mark of non-temporary relation */
 	rnode.backend = InvalidBackendId;
 
-	rnode.node.dbNode = dbOid;
-	rnode.node.spcNode = tablespaceOid;
+	rnode.locator.dbOid = dbOid;
+	rnode.locator.spcOid = tablespaceOid;
 
 	if (!parse_filename_for_nontemp_relation(filename, &oidchars, &forknum))
 		return;
 
 	memcpy(oidbuf, filename, oidchars);
 	oidbuf[oidchars] = '\0';
-	rnode.node.relNode = atooid(oidbuf);
+	rnode.locator.relNumber = atooid(oidbuf);
 
 	/* Compute number of blocks based on file size */
 	if (stat(filepath, &stat_buf) == 0)
 		nblocks = stat_buf.st_size / BLCKSZ;
 
 	elog(DEBUG1, "ptrack_mark_file %s, nblocks %u rnode db %u spc %u rel %u, forknum %d",
-		 filepath, nblocks, rnode.node.dbNode, rnode.node.spcNode, rnode.node.relNode, forknum);
+		 filepath, nblocks, rnode.locator.dbOid, rnode.locator.spcOid, rnode.locator.relNumber, forknum);
 
 	for (blkno = 0; blkno < nblocks; blkno++)
 		ptrack_mark_block(rnode, forknum, blkno);
@@ -591,7 +591,7 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
  * Mark modified block in ptrack_map.
  */
 void
-ptrack_mark_block(RelFileNodeBackend smgr_rnode,
+ptrack_mark_block(RelFileLocatorBackend smgr_rnode,
 				  ForkNumber forknum, BlockNumber blocknum)
 {
 	PtBlockId	bid;
@@ -612,7 +612,7 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 													* relations */
 		return;
 
-	bid.relnode = smgr_rnode.node;
+	bid.relnode = smgr_rnode.locator;
 	bid.forknum = forknum;
 	bid.blocknum = blocknum;
 

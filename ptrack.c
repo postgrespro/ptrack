@@ -73,9 +73,9 @@ void		_PG_fini(void);
 
 static void ptrack_shmem_startup_hook(void);
 static void ptrack_copydir_hook(const char *path);
-static void ptrack_mdwrite_hook(RelFileNodeBackend smgr_rnode,
+static void ptrack_mdwrite_hook(RelFileLocatorBackend smgr_rnode,
 								ForkNumber forkno, BlockNumber blkno);
-static void ptrack_mdextend_hook(RelFileNodeBackend smgr_rnode,
+static void ptrack_mdextend_hook(RelFileLocatorBackend smgr_rnode,
 								 ForkNumber forkno, BlockNumber blkno);
 static void ptrack_ProcessSyncRequests_hook(void);
 
@@ -265,7 +265,7 @@ ptrack_copydir_hook(const char *path)
 }
 
 static void
-ptrack_mdwrite_hook(RelFileNodeBackend smgr_rnode,
+ptrack_mdwrite_hook(RelFileLocatorBackend smgr_rnode,
 					ForkNumber forknum, BlockNumber blocknum)
 {
 	ptrack_mark_block(smgr_rnode, forknum, blocknum);
@@ -275,7 +275,7 @@ ptrack_mdwrite_hook(RelFileNodeBackend smgr_rnode,
 }
 
 static void
-ptrack_mdextend_hook(RelFileNodeBackend smgr_rnode,
+ptrack_mdextend_hook(RelFileLocatorBackend smgr_rnode,
 					 ForkNumber forknum, BlockNumber blocknum)
 {
 	ptrack_mark_block(smgr_rnode, forknum, blocknum);
@@ -356,16 +356,16 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 
 				memcpy(oidbuf, de->d_name, oidchars);
 				oidbuf[oidchars] = '\0';
-				pfl->relnode.relNode = atooid(oidbuf);
-				pfl->relnode.dbNode = dbOid;
-				pfl->relnode.spcNode = spcOid == InvalidOid ? DEFAULTTABLESPACE_OID : spcOid;
-				pfl->path = GetRelationPath(dbOid, pfl->relnode.spcNode,
-											pfl->relnode.relNode, InvalidBackendId, pfl->forknum);
+				pfl->relnode.relNumber = atooid(oidbuf);
+				pfl->relnode.dbOid = dbOid;
+				pfl->relnode.spcOid = spcOid == InvalidOid ? DEFAULTTABLESPACE_OID : spcOid;
+				pfl->path = GetRelationPath(dbOid, pfl->relnode.spcOid,
+											pfl->relnode.relNumber, InvalidBackendId, pfl->forknum);
 
 				*filelist = lappend(*filelist, pfl);
 
 				elog(DEBUG3, "ptrack: added file %s of rel %u to file list",
-					 pfl->path, pfl->relnode.relNode);
+					 pfl->path, pfl->relnode.relNumber);
 			}
 		}
 		else if (S_ISDIR(fst.st_mode))
@@ -426,9 +426,9 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 		ctx->relpath = pfl->path;
 	}
 
-	ctx->bid.relnode.spcNode = pfl->relnode.spcNode;
-	ctx->bid.relnode.dbNode = pfl->relnode.dbNode;
-	ctx->bid.relnode.relNode = pfl->relnode.relNode;
+	ctx->bid.relnode.spcOid = pfl->relnode.spcOid;
+	ctx->bid.relnode.dbOid = pfl->relnode.dbOid;
+	ctx->bid.relnode.relNumber = pfl->relnode.relNumber;
 	ctx->bid.forknum = pfl->forknum;
 	ctx->bid.blocknum = 0;
 

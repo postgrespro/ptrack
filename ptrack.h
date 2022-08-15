@@ -18,7 +18,7 @@
 #include "access/xlogdefs.h"
 #include "storage/block.h"
 #include "storage/buf.h"
-#include "storage/relfilenode.h"
+#include "storage/relfilelocator.h"
 #include "storage/smgr.h"
 #include "utils/relcache.h"
 
@@ -34,7 +34,7 @@
  */
 typedef struct PtBlockId
 {
-	RelFileNode relnode;
+	RelFileLocator relnode;
 	ForkNumber	forknum;
 	BlockNumber blocknum;
 }			PtBlockId;
@@ -56,7 +56,7 @@ typedef struct PtScanCtx
  */
 typedef struct PtrackFileList_i
 {
-	RelFileNode relnode;
+	RelFileLocator relnode;
 	ForkNumber	forknum;
 	int			segno;
 	char	   *path;
