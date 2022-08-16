@@ -516,22 +516,22 @@ ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 	/* Mark of non-temporary relation */
 	rnode.backend = InvalidBackendId;
 
-	rnode.node.dbNode = dbOid;
-	rnode.node.spcNode = tablespaceOid;
+	nodeDb(nodeOf(rnode)) = dbOid;
+	nodeSpc(nodeOf(rnode)) = tablespaceOid;
 
 	if (!parse_filename_for_nontemp_relation(filename, &oidchars, &forknum))
 		return;
 
 	memcpy(oidbuf, filename, oidchars);
 	oidbuf[oidchars] = '\0';
-	rnode.node.relNode = atooid(oidbuf);
+	nodeRel(nodeOf(rnode)) = atooid(oidbuf);
 
 	/* Compute number of blocks based on file size */
 	if (stat(filepath, &stat_buf) == 0)
 		nblocks = stat_buf.st_size / BLCKSZ;
 
 	elog(DEBUG1, "ptrack_mark_file %s, nblocks %u rnode db %u spc %u rel %u, forknum %d",
-		 filepath, nblocks, rnode.node.dbNode, rnode.node.spcNode, rnode.node.relNode, forknum);
+		 filepath, nblocks, nodeDb(nodeOf(rnode)), nodeSpc(nodeOf(rnode)), nodeRel(nodeOf(rnode)), forknum);
 
 	for (blkno = 0; blkno < nblocks; blkno++)
 		ptrack_mark_block(rnode, forknum, blkno);
@@ -612,7 +612,7 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 													* relations */
 		return;
 
-	bid.relnode = smgr_rnode.node;
+	bid.relnode = nodeOf(smgr_rnode);
 	bid.forknum = forknum;
 	bid.blocknum = blocknum;
 

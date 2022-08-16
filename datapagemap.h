@@ -9,7 +9,6 @@
 #ifndef DATAPAGEMAP_H
 #define DATAPAGEMAP_H
 
-#include "storage/relfilenode.h"
 #include "storage/block.h"
 
 struct datapagemap
