@@ -377,11 +377,7 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 				ptrack_gather_filelist(filelist, subpath, spcOid, InvalidOid);
 		}
 		/* TODO: is it enough to properly check symlink support? */
-#ifndef WIN32
 		else if (S_ISLNK(fst.st_mode))
-#else
-		else if (pgwin32_is_junction(subpath))
-#endif
 		{
 			/*
 			 * We expect that symlinks with only digits in the name to be
