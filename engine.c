@@ -591,7 +591,7 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
  * Mark modified block in ptrack_map.
  */
 void
-ptrack_mark_block(RelFileLocatorBackend smgr_rnode,
+ptrack_mark_block(RelFileLocatorBackend smgr_rlocator,
 				  ForkNumber forknum, BlockNumber blocknum)
 {
 	PtBlockId	bid;
@@ -608,11 +608,11 @@ ptrack_mark_block(RelFileLocatorBackend smgr_rnode,
 
 	if (ptrack_map_size == 0
 		|| ptrack_map == NULL
-		|| smgr_rnode.backend != InvalidBackendId) /* do not track temporary
+		|| smgr_rlocator.backend != InvalidBackendId) /* do not track temporary
 													* relations */
 		return;
 
-	bid.relnode = smgr_rnode.locator;
+	bid.relnode = smgr_rlocator.locator;
 	bid.forknum = forknum;
 	bid.blocknum = blocknum;
 

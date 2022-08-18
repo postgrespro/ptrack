@@ -73,9 +73,9 @@ void		_PG_fini(void);
 
 static void ptrack_shmem_startup_hook(void);
 static void ptrack_copydir_hook(const char *path);
-static void ptrack_mdwrite_hook(RelFileLocatorBackend smgr_rnode,
+static void ptrack_mdwrite_hook(RelFileLocatorBackend smgr_rlocator,
 								ForkNumber forkno, BlockNumber blkno);
-static void ptrack_mdextend_hook(RelFileLocatorBackend smgr_rnode,
+static void ptrack_mdextend_hook(RelFileLocatorBackend smgr_rlocator,
 								 ForkNumber forkno, BlockNumber blkno);
 static void ptrack_ProcessSyncRequests_hook(void);
 
@@ -265,23 +265,23 @@ ptrack_copydir_hook(const char *path)
 }
 
 static void
-ptrack_mdwrite_hook(RelFileLocatorBackend smgr_rnode,
+ptrack_mdwrite_hook(RelFileLocatorBackend smgr_rlocator,
 					ForkNumber forknum, BlockNumber blocknum)
 {
-	ptrack_mark_block(smgr_rnode, forknum, blocknum);
+	ptrack_mark_block(smgr_rlocator, forknum, blocknum);
 
 	if (prev_mdwrite_hook)
-		prev_mdwrite_hook(smgr_rnode, forknum, blocknum);
+		prev_mdwrite_hook(smgr_rlocator, forknum, blocknum);
 }
 
 static void
-ptrack_mdextend_hook(RelFileLocatorBackend smgr_rnode,
+ptrack_mdextend_hook(RelFileLocatorBackend smgr_rlocator,
 					 ForkNumber forknum, BlockNumber blocknum)
 {
-	ptrack_mark_block(smgr_rnode, forknum, blocknum);
+	ptrack_mark_block(smgr_rlocator, forknum, blocknum);
 
 	if (prev_mdextend_hook)
-		prev_mdextend_hook(smgr_rnode, forknum, blocknum);
+		prev_mdextend_hook(smgr_rlocator, forknum, blocknum);
 }
 
 static void

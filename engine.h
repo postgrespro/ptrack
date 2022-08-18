@@ -108,7 +108,7 @@ extern void ptrackCleanFiles(void);
 extern void assign_ptrack_map_size(int newval, void *extra);
 
 extern void ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid);
-extern void ptrack_mark_block(RelFileLocatorBackend smgr_rnode,
+extern void ptrack_mark_block(RelFileLocatorBackend smgr_rlocator,
 							  ForkNumber forkno, BlockNumber blkno);
 
 #endif							/* PTRACK_ENGINE_H */
