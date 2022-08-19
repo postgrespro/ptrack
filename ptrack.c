@@ -38,7 +38,7 @@
 #include "nodes/pg_list.h"
 #ifdef PGPRO_EE
 /* For file_is_in_cfs_tablespace() only. */
-#include "replication/basebackup.h"
+#include "common/cfs_common.h"
 #endif
 #include "storage/copydir.h"
 #include "storage/ipc.h"
