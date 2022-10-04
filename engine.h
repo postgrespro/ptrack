@@ -111,4 +111,10 @@ extern void ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid);
 extern void ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 							  ForkNumber forkno, BlockNumber blkno);
 
+extern bool is_cfm_file_path(const char *path);
+#ifdef PGPRO_EE
+extern off_t    get_cfs_relation_file_decompressed_size(RelFileNodeBackend rnode,
+					const char *fullpath, ForkNumber forknum);
+#endif
+
 #endif							/* PTRACK_ENGINE_H */

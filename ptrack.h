@@ -78,6 +78,9 @@ typedef struct PtrackFileList_i
 	ForkNumber	forknum;
 	int			segno;
 	char	   *path;
+#ifdef PGPRO_EE
+	bool is_cfs_compressed;
+#endif
 }			PtrackFileList_i;
 
 #endif							/* PTRACK_H */
