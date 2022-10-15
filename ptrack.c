@@ -40,6 +40,7 @@
 /* For file_is_in_cfs_tablespace() only. */
 #include "common/cfs_common.h"
 #endif
+#include "port/pg_crc32c.h"
 #include "storage/copydir.h"
 #include "storage/ipc.h"
 #include "storage/lmgr.h"
