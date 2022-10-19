@@ -1,7 +1,7 @@
-diff --git a/src/backend/replication/basebackup.c b/src/backend/replication/basebackup.c
-index 5244823ff85..160889b4a04 100644
---- a/src/backend/replication/basebackup.c
-+++ b/src/backend/replication/basebackup.c
+diff --git a/src/backend/backup/basebackup.c b/src/backend/backup/basebackup.c
+index 715428029b3..81f3218540a 100644
+--- a/src/backend/backup/basebackup.c
++++ b/src/backend/backup/basebackup.c
 @@ -197,6 +197,13 @@ static const struct exclude_list_item excludeFiles[] =
  	{"postmaster.pid", false},
  	{"postmaster.opts", false},
@@ -52,7 +52,7 @@ index 658fd95ba95..eee38eba176 100644
  	 * Be paranoid here and fsync all files to ensure the copy is really done.
  	 * But if fsync is disabled, we're done.
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
-index 43edaf5d873..bbaf7500944 100644
+index 3deac496eed..07c4ee2ba03 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
 @@ -87,6 +87,8 @@ typedef struct _MdfdVec
@@ -63,29 +63,29 @@ index 43edaf5d873..bbaf7500944 100644
 +mdwrite_hook_type mdwrite_hook = NULL;
  
  /* Populate a file tag describing an md.c segment file. */
- #define INIT_MD_FILETAG(a,xx_rnode,xx_forknum,xx_segno) \
-@@ -467,6 +469,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+ #define INIT_MD_FILETAG(a,xx_rlocator,xx_forknum,xx_segno) \
+@@ -484,6 +486,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  		register_dirty_segment(reln, forknum, v);
  
  	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
 +
 +	if (mdextend_hook)
-+		mdextend_hook(reln->smgr_rnode, forknum, blocknum);
++		mdextend_hook(reln->smgr_rlocator, forknum, blocknum);
  }
  
  /*
-@@ -756,6 +761,9 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+@@ -773,6 +778,9 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  
  	if (!skipFsync && !SmgrIsTemp(reln))
  		register_dirty_segment(reln, forknum, v);
 +
 +	if (mdwrite_hook)
-+		mdwrite_hook(reln->smgr_rnode, forknum, blocknum);
++		mdwrite_hook(reln->smgr_rlocator, forknum, blocknum);
  }
  
  /*
 diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
-index e1fb6310038..76d75680b31 100644
+index 9d6a9e91090..990d0722229 100644
 --- a/src/backend/storage/sync/sync.c
 +++ b/src/backend/storage/sync/sync.c
 @@ -81,6 +81,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
@@ -108,7 +108,7 @@ index e1fb6310038..76d75680b31 100644
  	sync_in_progress = false;
  }
 diff --git a/src/bin/pg_checksums/pg_checksums.c b/src/bin/pg_checksums/pg_checksums.c
-index 21dfe1b6ee5..266ac1ef40a 100644
+index 324ccf77834..e82cae5f325 100644
 --- a/src/bin/pg_checksums/pg_checksums.c
 +++ b/src/bin/pg_checksums/pg_checksums.c
 @@ -118,6 +118,11 @@ static const struct exclude_list_item skip[] = {
@@ -186,7 +186,7 @@ index d4772a29650..3318f64359d 100644
  /*
   * Write an empty XLOG file, containing only the checkpoint record
 diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
-index 62529310415..b496f54fb06 100644
+index 269ed6446e6..6318a8c1f55 100644
 --- a/src/bin/pg_rewind/filemap.c
 +++ b/src/bin/pg_rewind/filemap.c
 @@ -157,6 +157,10 @@ static const struct exclude_list_item excludeFiles[] =
@@ -228,17 +228,17 @@ index 50a26edeb06..af1602f5154 100644
  extern void copy_file(char *fromfile, char *tofile);
  
 diff --git a/src/include/storage/md.h b/src/include/storage/md.h
-index ffffa40db71..3ff98e0bf01 100644
+index 10aa1b0109b..1415675824e 100644
 --- a/src/include/storage/md.h
 +++ b/src/include/storage/md.h
 @@ -19,6 +19,13 @@
  #include "storage/smgr.h"
  #include "storage/sync.h"
  
-+typedef void (*mdextend_hook_type) (RelFileNodeBackend smgr_rnode,
++typedef void (*mdextend_hook_type) (RelFileLocatorBackend smgr_rlocator,
 +									ForkNumber forknum, BlockNumber blocknum);
 +extern PGDLLIMPORT mdextend_hook_type mdextend_hook;
-+typedef void (*mdwrite_hook_type) (RelFileNodeBackend smgr_rnode,
++typedef void (*mdwrite_hook_type) (RelFileLocatorBackend smgr_rlocator,
 +									ForkNumber forknum, BlockNumber blocknum);
 +extern PGDLLIMPORT mdwrite_hook_type mdwrite_hook;
 +
@@ -246,7 +246,7 @@ index ffffa40db71..3ff98e0bf01 100644
  extern void mdinit(void);
  extern void mdopen(SMgrRelation reln);
 diff --git a/src/include/storage/sync.h b/src/include/storage/sync.h
-index 9737e1eb67c..914ad86328f 100644
+index 049af878dec..7689d49a24e 100644
 --- a/src/include/storage/sync.h
 +++ b/src/include/storage/sync.h
 @@ -55,6 +55,9 @@ typedef struct FileTag

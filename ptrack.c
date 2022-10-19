@@ -40,6 +40,7 @@
 /* For file_is_in_cfs_tablespace() only. */
 #include "common/cfs_common.h"
 #endif
+#include "port/pg_crc32c.h"
 #include "storage/copydir.h"
 #include "storage/ipc.h"
 #include "storage/lmgr.h"
@@ -53,8 +54,8 @@
 #include "utils/pg_lsn.h"
 
 #include "datapagemap.h"
-#include "engine.h"
 #include "ptrack.h"
+#include "engine.h"
 
 PG_MODULE_MAGIC;
 
@@ -356,16 +357,16 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 
 				memcpy(oidbuf, de->d_name, oidchars);
 				oidbuf[oidchars] = '\0';
-				pfl->relnode.relNode = atooid(oidbuf);
-				pfl->relnode.dbNode = dbOid;
-				pfl->relnode.spcNode = spcOid == InvalidOid ? DEFAULTTABLESPACE_OID : spcOid;
-				pfl->path = GetRelationPath(dbOid, pfl->relnode.spcNode,
-											pfl->relnode.relNode, InvalidBackendId, pfl->forknum);
+				nodeRel(pfl->relnode) = atooid(oidbuf);
+				nodeDb(pfl->relnode) = dbOid;
+				nodeSpc(pfl->relnode) = spcOid == InvalidOid ? DEFAULTTABLESPACE_OID : spcOid;
+				pfl->path = GetRelationPath(dbOid, nodeSpc(pfl->relnode),
+											nodeRel(pfl->relnode), InvalidBackendId, pfl->forknum);
 
 				*filelist = lappend(*filelist, pfl);
 
 				elog(DEBUG3, "ptrack: added file %s of rel %u to file list",
-					 pfl->path, pfl->relnode.relNode);
+					 pfl->path, nodeRel(pfl->relnode));
 			}
 		}
 		else if (S_ISDIR(fst.st_mode))
@@ -426,9 +427,9 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 		ctx->relpath = pfl->path;
 	}
 
-	ctx->bid.relnode.spcNode = pfl->relnode.spcNode;
-	ctx->bid.relnode.dbNode = pfl->relnode.dbNode;
-	ctx->bid.relnode.relNode = pfl->relnode.relNode;
+	nodeSpc(ctx->bid.relnode) = nodeSpc(pfl->relnode);
+	nodeDb(ctx->bid.relnode) = nodeDb(pfl->relnode);
+	nodeRel(ctx->bid.relnode) = nodeRel(pfl->relnode);
 	ctx->bid.forknum = pfl->forknum;
 	ctx->bid.blocknum = 0;
 

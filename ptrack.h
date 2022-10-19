@@ -18,7 +18,11 @@
 #include "access/xlogdefs.h"
 #include "storage/block.h"
 #include "storage/buf.h"
+#if PG_VERSION_NUM >= 160000
+#include "storage/relfilelocator.h"
+#else
 #include "storage/relfilenode.h"
+#endif
 #include "storage/smgr.h"
 #include "utils/relcache.h"
 
@@ -28,6 +32,20 @@
 #define PTRACK_VERSION_NUM 230
 /* Last ptrack version that changed map file format */
 #define PTRACK_MAP_FILE_VERSION_NUM 220
+
+#if PG_VERSION_NUM >= 160000
+#define RelFileNode			RelFileLocator
+#define RelFileNodeBackend	RelFileLocatorBackend
+#define nodeDb(node)		(node).dbOid
+#define nodeSpc(node)		(node).spcOid
+#define nodeRel(node)		(node).relNumber
+#define nodeOf(ndbck)		(ndbck).locator
+#else
+#define nodeDb(node)		(node).dbNode
+#define nodeSpc(node)		(node).spcNode
+#define nodeRel(node)		(node).relNode
+#define nodeOf(ndbck)		(ndbck).node
+#endif
 
 /*
  * Structure identifying block on the disk.
