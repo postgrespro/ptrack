@@ -376,7 +376,7 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 				ptrack_gather_filelist(filelist, subpath, spcOid, InvalidOid);
 		}
 		/* TODO: is it enough to properly check symlink support? */
-#ifndef WIN32
+#if !defined(WIN32) || (PG_VERSION_NUM >= 160000)
 		else if (S_ISLNK(fst.st_mode))
 #else
 		else if (pgwin32_is_junction(subpath))
