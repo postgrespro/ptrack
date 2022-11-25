@@ -251,14 +251,6 @@ ptrack_copydir_hook(const char *path)
 
 	elog(DEBUG1, "ptrack_copydir_hook: spcOid %u, dbOid %u", spcOid, dbOid);
 
-#ifdef PGPRO_EE
-	/*
-	 * Currently, we do not track files from compressed tablespaces in ptrack.
-	 */
-	if (file_is_in_cfs_tablespace(path))
-		elog(DEBUG1, "ptrack_copydir_hook: skipping changes tracking in the CFS tablespace %u", spcOid);
-	else
-#endif
 	ptrack_walkdir(path, spcOid, dbOid);
 
 	if (prev_copydir_hook)
@@ -302,6 +294,11 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 {
 	DIR		   *dir;
 	struct dirent *de;
+#ifdef PGPRO_EE
+	bool is_cfs;
+
+	is_cfs = file_is_in_cfs_tablespace(path);
+#endif
 
 	dir = AllocateDir(path);
 
@@ -315,7 +312,8 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 
 		if (strcmp(de->d_name, ".") == 0 ||
 			strcmp(de->d_name, "..") == 0 ||
-			looks_like_temp_rel_name(de->d_name))
+			looks_like_temp_rel_name(de->d_name) ||
+			is_cfm_file_path(de->d_name))
 			continue;
 
 		snprintf(subpath, sizeof(subpath), "%s/%s", path, de->d_name);
@@ -362,6 +360,10 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 				nodeSpc(pfl->relnode) = spcOid == InvalidOid ? DEFAULTTABLESPACE_OID : spcOid;
 				pfl->path = GetRelationPath(dbOid, nodeSpc(pfl->relnode),
 											nodeRel(pfl->relnode), InvalidBackendId, pfl->forknum);
+#ifdef PGPRO_EE
+				pfl->is_cfs_compressed = is_cfs
+					&& md_get_compressor_internal(pfl->relnode, InvalidBackendId, pfl->forknum) != 0;
+#endif
 
 				*filelist = lappend(*filelist, pfl);
 
@@ -403,6 +405,10 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 	ListCell   *cell;
 	char	   *fullpath;
 	struct stat fst;
+	off_t       rel_st_size = 0;
+#ifdef PGPRO_EE
+	RelFileNodeBackend rnodebackend;
+#endif
 
 	/* No more file in the list */
 	if (list_length(ctx->filelist) == 0)
@@ -449,14 +455,28 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 		return ptrack_filelist_getnext(ctx);
 	}
 
+#ifdef PGPRO_EE
+	rnodebackend.node = ctx->bid.relnode;
+	rnodebackend.backend = InvalidBackendId;
+
+	if(pfl->is_cfs_compressed) {
+		rel_st_size = get_cfs_relation_file_decompressed_size(rnodebackend, fullpath, pfl->forknum);
+
+		// Could not open fullpath for some reason, trying the next file.
+		if(rel_st_size == -1)
+			return ptrack_filelist_getnext(ctx);
+	} else
+#endif
+	rel_st_size = fst.st_size;
+
 	if (pfl->segno > 0)
 	{
-		ctx->relsize = pfl->segno * RELSEG_SIZE + fst.st_size / BLCKSZ;
+		ctx->relsize = pfl->segno * RELSEG_SIZE + rel_st_size / BLCKSZ;
 		ctx->bid.blocknum = pfl->segno * RELSEG_SIZE;
 	}
 	else
 		/* Estimate relsize as size of first segment in blocks */
-		ctx->relsize = fst.st_size / BLCKSZ;
+		ctx->relsize = rel_st_size / BLCKSZ;
 
 	elog(DEBUG3, "ptrack: got file %s with size %u from the file list", pfl->path, ctx->relsize);
 

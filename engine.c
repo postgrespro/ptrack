@@ -36,6 +36,10 @@
 #include "catalog/pg_tablespace.h"
 #include "miscadmin.h"
 #include "port/pg_crc32c.h"
+#ifdef PGPRO_EE
+/* For file_is_in_cfs_tablespace() only. */
+#include "common/cfs_common.h"
+#endif
 #include "storage/copydir.h"
 #if PG_VERSION_NUM >= 120000
 #include "storage/md.h"
@@ -90,6 +94,44 @@ ptrack_write_chunk(int fd, pg_crc32c *crc, char *chunk, size_t size)
 				 errmsg("could not write file \"%s\": %m", PTRACK_PATH_TMP)));
 	}
 }
+
+/*
+ * Determines whether given file path is a path to a cfm file.
+ */
+bool
+is_cfm_file_path(const char *filepath) {
+	ssize_t len = strlen(filepath);
+
+	// For this length checks we assume that the filename is at least
+	// 1 character longer than the corresponding extension ".cfm":
+	// strlen(".cfm") == 4 therefore we assume that the filename can't be
+	// shorter than 5 bytes, for example: "5.cfm".
+	return strlen(filepath) >= 5 && strcmp(&filepath[len-4], ".cfm") == 0;
+}
+
+#ifdef PGPRO_EE
+/*
+ * Determines the relation file size specified by fullpath as if it
+ * was not compressed.
+ */
+off_t
+get_cfs_relation_file_decompressed_size(RelFileNodeBackend rnode, const char *fullpath, ForkNumber forknum) {
+	File     fd;
+	int      compressor;
+	off_t    size;
+
+	compressor = md_get_compressor_internal(rnode.node, rnode.backend, forknum);
+	fd = PathNameOpenFile(fullpath, O_RDWR | PG_BINARY, compressor);
+
+	if(fd < 0)
+		return (off_t)-1;
+
+	size = FileSize(fd);
+	FileClose(fd);
+
+	return size;
+}
+#endif
 
 /*
  * Delete ptrack files when ptrack is disabled.
@@ -498,8 +540,13 @@ assign_ptrack_map_size(int newval, void *extra)
  * For use in functions that copy directories bypassing buffer manager.
  */
 static void
+#ifdef PGPRO_EE
+ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
+				 const char *filepath, const char *filename, bool is_cfs)
+#else
 ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 				 const char *filepath, const char *filename)
+#endif
 {
 	RelFileNodeBackend rnode;
 	ForkNumber	forknum;
@@ -508,6 +555,9 @@ ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 	struct stat stat_buf;
 	int			oidchars;
 	char		oidbuf[OIDCHARS + 1];
+#ifdef PGPRO_EE
+	off_t       rel_size;
+#endif
 
 	/* Do not track temporary relations */
 	if (looks_like_temp_rel_name(filename))
@@ -526,6 +576,21 @@ ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 	oidbuf[oidchars] = '\0';
 	nodeRel(nodeOf(rnode)) = atooid(oidbuf);
 
+#ifdef PGPRO_EE
+	// if current tablespace is cfs-compressed and md_get_compressor_internal
+	// returns the type of the compressing algorithm for filepath, then it
+	// needs to be de-compressed to obtain its size
+	if(is_cfs && md_get_compressor_internal(rnode.node, rnode.backend, forknum) != 0) {
+		rel_size = get_cfs_relation_file_decompressed_size(rnode, filepath, forknum);
+
+		if(rel_size == (off_t)-1) {
+			elog(WARNING, "ptrack: could not open cfs-compressed relation file: %s", filepath);
+			return;
+		}
+
+		nblocks = rel_size / BLCKSZ;
+	} else
+#endif
 	/* Compute number of blocks based on file size */
 	if (stat(filepath, &stat_buf) == 0)
 		nblocks = stat_buf.st_size / BLCKSZ;
@@ -546,6 +611,9 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 {
 	DIR		   *dir;
 	struct dirent *de;
+#ifdef PGPRO_EE
+	bool        is_cfs;
+#endif
 
 	/* Do not walk during bootstrap and if ptrack is disabled */
 	if (ptrack_map_size == 0
@@ -553,6 +621,10 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 		|| IsBootstrapProcessingMode()
 		|| InitializingParallelWorker)
 		return;
+
+#ifdef PGPRO_EE
+	is_cfs = file_is_in_cfs_tablespace(path);
+#endif
 
 	dir = AllocateDir(path);
 
@@ -581,7 +653,11 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 		}
 
 		if (S_ISREG(fst.st_mode))
+#ifdef PGPRO_EE
+			ptrack_mark_file(dbOid, tablespaceOid, subpath, de->d_name, is_cfs);
+#else
 			ptrack_mark_file(dbOid, tablespaceOid, subpath, de->d_name);
+#endif
 	}
 
 	FreeDir(dir);				/* we ignore any error here */
