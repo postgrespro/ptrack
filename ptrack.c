@@ -456,7 +456,7 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 	}
 
 #if CFS_SUPPORT
-	rnodebackend.node = ctx->bid.relnode;
+	nodeOf(rnodebackend) = ctx->bid.relnode;
 	rnodebackend.backend = InvalidBackendId;
 
 	if(pfl->is_cfs_compressed) {

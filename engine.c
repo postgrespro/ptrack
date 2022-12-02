@@ -120,7 +120,7 @@ get_cfs_relation_file_decompressed_size(RelFileNodeBackend rnode, const char *fu
 	int      compressor;
 	off_t    size;
 
-	compressor = md_get_compressor_internal(rnode.node, rnode.backend, forknum);
+	compressor = md_get_compressor_internal(nodeOf(rnode), rnode.backend, forknum);
 	fd = PathNameOpenFile(fullpath, O_RDWR | PG_BINARY, compressor);
 
 	if(fd < 0)
@@ -580,7 +580,7 @@ ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 	// if current tablespace is cfs-compressed and md_get_compressor_internal
 	// returns the type of the compressing algorithm for filepath, then it
 	// needs to be de-compressed to obtain its size
-	if(is_cfs && md_get_compressor_internal(rnode.node, rnode.backend, forknum) != 0) {
+	if(is_cfs && md_get_compressor_internal(nodeOf(rnode), rnode.backend, forknum) != 0) {
 		rel_size = get_cfs_relation_file_decompressed_size(rnode, filepath, forknum);
 
 		if(rel_size == (off_t)-1) {
