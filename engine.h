@@ -44,6 +44,9 @@
 #define PTRACK_MAGIC "ptk"
 #define PTRACK_MAGIC_SIZE 4
 
+/* CFS support macro */
+#define CFS_SUPPORT (defined(PGPRO_EE) && PG_VERSION_NUM >= 120000)
+
 /*
  * Header of ptrack map.
  */

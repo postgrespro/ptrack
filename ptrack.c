@@ -294,7 +294,7 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 {
 	DIR		   *dir;
 	struct dirent *de;
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 	bool is_cfs;
 
 	is_cfs = file_is_in_cfs_tablespace(path);
@@ -360,7 +360,7 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 				nodeSpc(pfl->relnode) = spcOid == InvalidOid ? DEFAULTTABLESPACE_OID : spcOid;
 				pfl->path = GetRelationPath(dbOid, nodeSpc(pfl->relnode),
 											nodeRel(pfl->relnode), InvalidBackendId, pfl->forknum);
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 				pfl->is_cfs_compressed = is_cfs
 					&& md_get_compressor_internal(pfl->relnode, InvalidBackendId, pfl->forknum) != 0;
 #endif
@@ -406,7 +406,7 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 	char	   *fullpath;
 	struct stat fst;
 	off_t       rel_st_size = 0;
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 	RelFileNodeBackend rnodebackend;
 #endif
 
@@ -455,7 +455,7 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 		return ptrack_filelist_getnext(ctx);
 	}
 
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 	rnodebackend.node = ctx->bid.relnode;
 	rnodebackend.backend = InvalidBackendId;
 
