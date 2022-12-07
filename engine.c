@@ -109,7 +109,7 @@ is_cfm_file_path(const char *filepath) {
 	return strlen(filepath) >= 5 && strcmp(&filepath[len-4], ".cfm") == 0;
 }
 
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 /*
  * Determines the relation file size specified by fullpath as if it
  * was not compressed.
@@ -120,7 +120,7 @@ get_cfs_relation_file_decompressed_size(RelFileNodeBackend rnode, const char *fu
 	int      compressor;
 	off_t    size;
 
-	compressor = md_get_compressor_internal(rnode.node, rnode.backend, forknum);
+	compressor = md_get_compressor_internal(nodeOf(rnode), rnode.backend, forknum);
 	fd = PathNameOpenFile(fullpath, O_RDWR | PG_BINARY, compressor);
 
 	if(fd < 0)
@@ -540,7 +540,7 @@ assign_ptrack_map_size(int newval, void *extra)
  * For use in functions that copy directories bypassing buffer manager.
  */
 static void
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 				 const char *filepath, const char *filename, bool is_cfs)
 #else
@@ -555,7 +555,7 @@ ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 	struct stat stat_buf;
 	int			oidchars;
 	char		oidbuf[OIDCHARS + 1];
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 	off_t       rel_size;
 #endif
 
@@ -576,11 +576,11 @@ ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 	oidbuf[oidchars] = '\0';
 	nodeRel(nodeOf(rnode)) = atooid(oidbuf);
 
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 	// if current tablespace is cfs-compressed and md_get_compressor_internal
 	// returns the type of the compressing algorithm for filepath, then it
 	// needs to be de-compressed to obtain its size
-	if(is_cfs && md_get_compressor_internal(rnode.node, rnode.backend, forknum) != 0) {
+	if(is_cfs && md_get_compressor_internal(nodeOf(rnode), rnode.backend, forknum) != 0) {
 		rel_size = get_cfs_relation_file_decompressed_size(rnode, filepath, forknum);
 
 		if(rel_size == (off_t)-1) {
@@ -611,7 +611,7 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 {
 	DIR		   *dir;
 	struct dirent *de;
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 	bool        is_cfs;
 #endif
 
@@ -622,7 +622,7 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 		|| InitializingParallelWorker)
 		return;
 
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 	is_cfs = file_is_in_cfs_tablespace(path);
 #endif
 
@@ -653,7 +653,7 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 		}
 
 		if (S_ISREG(fst.st_mode))
-#ifdef PGPRO_EE
+#if CFS_SUPPORT
 			ptrack_mark_file(dbOid, tablespaceOid, subpath, de->d_name, is_cfs);
 #else
 			ptrack_mark_file(dbOid, tablespaceOid, subpath, de->d_name);
