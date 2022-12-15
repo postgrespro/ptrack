@@ -63,7 +63,7 @@ ptrack_file_exists(const char *path)
 {
 	struct stat st;
 
-	AssertArg(path != NULL);
+	Assert(path != NULL);
 
 	if (stat(path, &st) == 0)
 		return S_ISDIR(st.st_mode) ? false : true;
