@@ -1,19 +1,83 @@
-PostgreSQL License
+				POSTGRES PROFESSIONAL LICENSE
+			FOR CUSTOMERS TO INTERNALLY USE POSTGRES PRO SOFTWARE
+                           Version 1.2, March 2022
 
-Copyright (c) 2019-2020, Postgres Professional
+0. Background. Postgres Professional publishes software in "source-available"
+or "open code" form. This means that source code of the software is available
+for inspection and modification.
 
-Permission to use, copy, modify, and distribute this software and its
-documentation for any purpose, without fee, and without a written agreement is
-hereby granted, provided that the above copyright notice and this paragraph
-and the following two paragraphs appear in all copies.
+1. LICENSE GRANT.  If Postgres Professional LLC and Postgres Professional
+Europe Limited (collectively "PgPro") intentionally provides to a legal or
+natural person ("Customer") a copy of the Postgres Pro Software ("Software")
+with an express written statement that this Postgres Professional License
+("PgPro License") shall apply to such copy, then PgPro grants such Customer
+a royalty-free, non-exclusive, worldwide, personal, non-transferable,
+non-sublicensable right to copy, adapt and Internally Use the Software and
+derivative versions of the Software on the condition that Customer complies
+with all terms and limitations of this PgPro License and only to the extent
+expressly permitted under this PgPro License.
 
-IN NO EVENT SHALL Postgres Professional BE LIABLE TO ANY PARTY FOR DIRECT, INDIRECT,
-SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES, INCLUDING LOST PROFITS, ARISING
-OUT OF THE USE OF THIS SOFTWARE AND ITS DOCUMENTATION, EVEN IF Postgres Professional
-HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+"Internally Use" means executing and utilizing the functionality of the
+Software by the Customer through statutory employees and individual
+independent contractors of the Customer, its Affiliates and Service
+Providers ("Customer's Extended Enterprise") for purposes of supporting the
+Customer's internal business processes, subject to written confidentiality
+and non-disclosure agreements that prohibit disclosures of the Software to
+anyone outside Customer's Extended Enterprise, and does not extend to any
+form of distribution, publication, public display, public performance or
+hosting for remote access by anyone who is not part of Customer's Extended
+Enterprise.
 
-Postgres Professional SPECIFICALLY DISCLAIMS ANY WARRANTIES, INCLUDING, BUT NOT
-LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE. THE SOFTWARE PROVIDED HEREUNDER IS ON AN "AS IS" BASIS,
-AND Postgres Professional HAS NO OBLIGATIONS TO PROVIDE MAINTENANCE, SUPPORT, UPDATES,
-ENHANCEMENTS, OR MODIFICATIONS.
+"Affiliate" means any legal entity that is wholly-owned by Customer,
+wholly-owns Customer or is under hundred percent common ownership with
+Customer.
+
+"Service Provider" means an entity that uses the Software or derivative
+version of the Software that Customer created, solely on behalf and in the
+interest of the Customer (and not for its own purposes or its other
+customers) to provide services other than technical support or modifications
+of the Software.  For the avoidance of doubt, PgPro does not grant any
+license directly to Service Providers.  Service Providers may only assist
+Customer in exercising Customer's rights under this License.  Service
+Providers must not modify the Software or any derivative versions thereof or
+provide Customer with technical support or maintenance concerning the Software.
+
+
+2. LIMITATIONS.  Customer must not use - or enable or permit anyone to use
+- the Software, except as expressly permitted in Section 1 (License Grant). 
+For the avoidance of doubt, Customer must not disclose, distribute, sell,
+publicly display, publicly perform or host on a "cloud," "SaaS," "DBaaS" or
+other remote access basis.
+
+
+3. CONFIDENTIALITY.  Customer must keep the Software confidential and not
+disclose or use the Software, except as permitted under this PgPro License.
+
+
+4. CUSTOMER LICENSE.  If Customer shares any improvements, bug fixes, or
+modified versions of the Software or parts thereof or information related
+thereto ("Improvements") with PgPro, then Customer grants PgPro a
+royalty-free, non-exclusive, worldwide, transferable, sublicensable and
+irrevocable license to use, make, sell, import, export, disclose, copy,
+adapt, distribute, publicly display, publicly perform, host for remote
+access and commercialize or utilize in similar or other ways, at PgPro's
+sole discretion, the Improvements.
+
+
+5. DISCLAIMER.  PGPRO DOES NOT EXTEND ANY EXPRESS REPRESENTATIONS OR
+WARRANTY AND HEREBY DISCLAIMS ANY IMPLIED WARRANTIES AND REPRESENTATIONS
+REGARDING THE SOFTWARE, INCLUDING, WITHOUT LIMITATION, ANY IMPLIED WARRANTY
+OF MERCHANTABILITY, FUNCTIONALITY, QUIET ENJOYMENT, NON-INFRINGEMENT AND
+PROFESSIONAL OR WORKMANLIKE SERVICES PERTAINING TO THE SOFTWARE.  PGPRO
+SHALL NOT BE LIABLE FOR ANY DAMAGES, INCLUDING, WITHOUT LIMITATION, LOST
+PROFITS, LOST DATA, LOST REVENUE, OR INDIRECT, CONSEQUENTIAL, SPECIAL OR
+OTHER DAMAGES CAUSED BY OR RELATED TO THE SOFTWARE.
+
+
+6. GENERAL TERMS. This PgPro License shall be governed by, and interpreted
+under, State of California, United States of America, law.  Except as
+expressly agreed in a signed written agreement with Customer, PgPro may
+update the terms of this PgPro License at its sole discretion with 90 days
+prior notice to Customer and PgPro does not accept, and hereby expressly
+rejects, any additional or conflicting terms that Customer may propose or
+communicate in standard procurement terms or otherwise.
