@@ -344,15 +344,11 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 				if (!parse_filename_for_nontemp_relation(de->d_name, &oidchars, &pfl->forknum))
 					continue;
 
-				/* Parse segno for main fork */
-				if (pfl->forknum == MAIN_FORKNUM)
-				{
-					segpath = strstr(de->d_name, ".");
-					pfl->segno = segpath != NULL ? atoi(segpath + 1) : 0;
-				}
-				else
-					pfl->segno = 0;
+				/* Parse segno */
+				segpath = strstr(de->d_name, ".");
+				pfl->segno = segpath != NULL ? atoi(segpath + 1) : 0;
 
+				/* Fill the pfl in */
 				memcpy(oidbuf, de->d_name, oidchars);
 				oidbuf[oidchars] = '\0';
 				nodeRel(pfl->relnode) = atooid(oidbuf);
