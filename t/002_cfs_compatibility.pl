@@ -65,6 +65,7 @@ $node->append_conf('postgresql.conf', qq{
 	shared_preload_libraries = 'ptrack'
 	ptrack.map_size = 16
 	wal_level = 'replica'
+	autovacuum = 'off'
 });
 
 $node->start;
@@ -119,9 +120,9 @@ my $no_cfs_relpath = $node->safe_psql('testing_no_cfs', "select pg_relation_file
 
 # select the pagecount sums and compare them (should be equal)
 my $pagecount_sum_cfs = $node->safe_psql('postgres',
-			"select sum(pagecount) from ptrack_get_pagemapset('$init_lsn'::pg_lsn) where path like '%$cfs_relpath%';");
+			"select sum(pagecount) from ptrack_get_pagemapset('$init_lsn'::pg_lsn) where path like '%$cfs_relpath';");
 my $pagecount_sum_no_cfs = $node->safe_psql('postgres',
-			"select sum(pagecount) from ptrack_get_pagemapset('$init_lsn'::pg_lsn) where path like '%$no_cfs_relpath%';");
+			"select sum(pagecount) from ptrack_get_pagemapset('$init_lsn'::pg_lsn) where path like '%$no_cfs_relpath';");
 
 is($pagecount_sum_cfs, $pagecount_sum_no_cfs, "pagecount sums don't match");
 
@@ -137,9 +138,9 @@ $no_cfs_relpath = $node->safe_psql('testing_no_cfs', "select pg_relation_filepat
 
 # select the pagecount sums and compare them (again, they should be equal)
 $pagecount_sum_cfs = $node->safe_psql('postgres',
-			"select sum(pagecount) from ptrack_get_pagemapset('$init_lsn'::pg_lsn) where path like '%$cfs_relpath%';");
+			"select sum(pagecount) from ptrack_get_pagemapset('$init_lsn'::pg_lsn) where path like '%$cfs_relpath';");
 $pagecount_sum_no_cfs = $node->safe_psql('postgres',
-			"select sum(pagecount) from ptrack_get_pagemapset('$init_lsn'::pg_lsn) where path like '%$no_cfs_relpath%';");
+			"select sum(pagecount) from ptrack_get_pagemapset('$init_lsn'::pg_lsn) where path like '%$no_cfs_relpath';");
 
 is($pagecount_sum_cfs, $pagecount_sum_no_cfs, "pagecount sums don't match");
 
