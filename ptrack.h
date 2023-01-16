@@ -27,9 +27,9 @@
 #include "utils/relcache.h"
 
 /* Ptrack version as a string */
-#define PTRACK_VERSION "2.3"
+#define PTRACK_VERSION "2.4"
 /* Ptrack version as a number */
-#define PTRACK_VERSION_NUM 230
+#define PTRACK_VERSION_NUM 240
 /* Last ptrack version that changed map file format */
 #define PTRACK_MAP_FILE_VERSION_NUM 220
 

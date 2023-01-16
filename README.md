@@ -74,7 +74,7 @@ Usage example:
 postgres=# SELECT ptrack_version();
  ptrack_version 
 ----------------
- 2.3
+ 2.4
 (1 row)
 
 postgres=# SELECT ptrack_init_lsn();
@@ -120,6 +120,13 @@ Since version 2.2 we use a different algorithm for tracking changed pages. Thus,
 * Stop your server
 * Update ptrack binaries
 * Remove global/ptrack.map.mmap if it exist in server data directory
+* Start server
+* Do `ALTER EXTENSION 'ptrack' UPDATE;`.
+
+#### Upgrading from 2.3.* to 2.4.*:
+
+* Stop your server
+* Update ptrack binaries
 * Start server
 * Do `ALTER EXTENSION 'ptrack' UPDATE;`.
 

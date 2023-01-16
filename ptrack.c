@@ -16,7 +16,7 @@
  *
  * Currently ptrack has following public API methods:
  *
- * # ptrack_version                  --- returns ptrack version string (2.3 currently).
+ * # ptrack_version                  --- returns ptrack version string (2.4 currently).
  * # ptrack_get_pagemapset('LSN')    --- returns a set of changed data files with
  * 										 bitmaps of changed blocks since specified LSN.
  * # ptrack_init_lsn                 --- returns LSN of the last ptrack map initialization.
