@@ -1,0 +1,41 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  Test:
+    strategy:
+      matrix:
+        pg_branch: [master, REL_11_STABLE, REL_12_STABLE, REL_13_STABLE, REL_14_STABLE]
+        test_case: [tap, all]
+        mode: [none, legacy, paranoia]
+        exclude:
+          - test_case: tap
+            mode: paranoia
+          - test_case: all
+            mode: none
+          - test_case: all
+            mode: legacy
+    continue-on-error: true
+    runs-on:
+      - ubuntu-latest
+    env:
+      PG_BRANCH: ${{ matrix.pg_branch }}
+      TEST_CASE: ${{ matrix.test_case }}
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build the Docker image
+        run: |
+          ./make_dockerfile.sh
+          docker-compose build
+      - name: Test
+        run: docker-compose run $(bash <(curl -s https://codecov.io/env)) tests
+
