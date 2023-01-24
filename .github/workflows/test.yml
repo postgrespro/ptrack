@@ -14,9 +14,23 @@ jobs:
   Test:
     strategy:
       matrix:
-        pg_branch: [master, REL_11_STABLE, REL_12_STABLE, REL_13_STABLE, REL_14_STABLE]
+        pg_branch: [REL_11_STABLE, REL_12_STABLE, REL_13_STABLE, REL_14_STABLE]
         test_case: [tap, all]
         mode: [none, legacy, paranoia]
+        experimental: [false]
+        include:
+          - pg_branch: master
+            test_case: tap
+            mode: none
+            experimental: true
+          - pg_branch: master
+            test_case: tap
+            mode: legacy
+            experimental: true
+          - pg_branch: master
+            test_case: all
+            mode: paranoia
+            experimental: true
         exclude:
           - test_case: tap
             mode: paranoia
@@ -24,7 +38,7 @@ jobs:
             mode: none
           - test_case: all
             mode: legacy
-    continue-on-error: true
+    continue-on-error: ${{ matrix.experimental }}
     runs-on:
       - ubuntu-latest
     env:
