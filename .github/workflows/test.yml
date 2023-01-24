@@ -38,6 +38,7 @@ jobs:
             mode: none
           - test_case: all
             mode: legacy
+      fail-fast: false
     continue-on-error: ${{ matrix.experimental }}
     runs-on:
       - ubuntu-latest
