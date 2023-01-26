@@ -1,4 +1,4 @@
-![test](https://github.com/postgrespro/ptrack/actions/workflows/test.yml/badge.svg)
+[![Test](https://github.com/postgrespro/ptrack/actions/workflows/test.yml/badge.svg)](https://github.com/postgrespro/ptrack/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/postgrespro/ptrack/branch/master/graph/badge.svg)](https://codecov.io/gh/postgrespro/ptrack)
 [![GitHub release](https://img.shields.io/github/v/release/postgrespro/ptrack?include_prereleases)](https://github.com/postgrespro/ptrack/releases/latest)
 
