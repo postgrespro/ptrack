@@ -117,16 +117,28 @@ is_cfm_file_path(const char *filepath) {
 off_t
 get_cfs_relation_file_decompressed_size(RelFileNodeBackend rnode, const char *fullpath, ForkNumber forknum) {
 	File     fd;
-	int      compressor;
 	off_t    size;
 
+#if PG_VERSION_NUM >= 120000
+	int      compressor;
 	compressor = md_get_compressor_internal(nodeOf(rnode), rnode.backend, forknum);
 	fd = PathNameOpenFile(fullpath, O_RDWR | PG_BINARY, compressor);
+#else
+	fd = PathNameOpenFile(fullpath, O_RDWR | PG_BINARY | PG_COMPRESSION);
+#endif
 
 	if(fd < 0)
 		return (off_t)-1;
 
+#if PG_VERSION_NUM >= 120000
 	size = FileSize(fd);
+#else
+	size = FileSeek(fd, 0, SEEK_END);
+
+	if (size < 0)
+		return (off_t) -1;
+#endif
+
 	FileClose(fd);
 
 	return size;
