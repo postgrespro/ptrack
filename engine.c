@@ -134,9 +134,6 @@ get_cfs_relation_file_decompressed_size(RelFileNodeBackend rnode, const char *fu
 	size = FileSize(fd);
 #else
 	size = FileSeek(fd, 0, SEEK_END);
-
-	if (size < 0)
-		return (off_t) -1;
 #endif
 
 	FileClose(fd);
