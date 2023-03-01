@@ -35,7 +35,11 @@
 #endif
 #include "catalog/pg_tablespace.h"
 #include "miscadmin.h"
+#if PG_VERSION_NUM >= 160000
+#include "storage/checksum.h"
+#else
 #include "port/pg_crc32c.h"
+#endif
 #ifdef PGPRO_EE
 /* For file_is_in_cfs_tablespace() only. */
 #include "common/cfs_common.h"
@@ -81,7 +85,11 @@ ptrack_file_exists(const char *path)
 static void
 ptrack_write_chunk(int fd, pg_crc32c *crc, char *chunk, size_t size)
 {
+#if PG_VERSION_NUM >= 160000
+	COMP_CRC32C_COMMON(*crc, (char *) chunk, size);
+#else
 	COMP_CRC32C(*crc, (char *) chunk, size);
+#endif
 
 	if (write(fd, chunk, size) != size)
 	{
@@ -248,7 +256,11 @@ ptrackMapReadFromFile(const char *ptrack_path)
 		pg_crc32c  *file_crc;
 
 		INIT_CRC32C(crc);
+#if PG_VERSION_NUM >= 160000
+		COMP_CRC32C_COMMON(crc, (char *) ptrack_map, PtrackCrcOffset);
+#else
 		COMP_CRC32C(crc, (char *) ptrack_map, PtrackCrcOffset);
+#endif
 		FIN_CRC32C(crc);
 
 		file_crc = (pg_crc32c *) ((char *) ptrack_map + PtrackCrcOffset);
