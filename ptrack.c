@@ -322,7 +322,7 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 
 		if (sret < 0)
 		{
-			ereport(LOG,
+			ereport(WARNING,
 					(errcode_for_file_access(),
 					 errmsg("ptrack: could not stat file \"%s\": %m", subpath)));
 			continue;
@@ -330,6 +330,14 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 
 		if (S_ISREG(fst.st_mode))
 		{
+			if (fst.st_size == 0)
+			{
+				elog(DEBUG3, "ptrack: skip empty file %s", subpath);
+
+				/* But try the next one */
+				continue;
+			}
+
 			/* Regular file inside database directory, otherwise skip it */
 			if (dbOid != InvalidOid || spcOid == GLOBALTABLESPACE_OID)
 			{
@@ -406,6 +414,8 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 	RelFileNodeBackend rnodebackend;
 #endif
 
+get_next:
+
 	/* No more file in the list */
 	if (list_length(ctx->filelist) == 0)
 		return -1;
@@ -440,15 +450,15 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 		elog(WARNING, "ptrack: cannot stat file %s", fullpath);
 
 		/* But try the next one */
-		return ptrack_filelist_getnext(ctx);
+		goto get_next;
 	}
 
 	if (fst.st_size == 0)
 	{
-		elog(WARNING, "ptrack: skip empty file %s", fullpath);
+		elog(DEBUG3, "ptrack: skip empty file %s", fullpath);
 
 		/* But try the next one */
-		return ptrack_filelist_getnext(ctx);
+		goto get_next;
 	}
 
 #if CFS_SUPPORT
@@ -460,7 +470,7 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 
 		// Could not open fullpath for some reason, trying the next file.
 		if(rel_st_size == -1)
-			return ptrack_filelist_getnext(ctx);
+			goto get_next;
 	} else
 #endif
 	rel_st_size = fst.st_size;
