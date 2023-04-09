@@ -115,6 +115,8 @@ extern void assign_ptrack_map_size(int newval, void *extra);
 extern void ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid);
 extern void ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 							  ForkNumber forkno, BlockNumber blkno);
+extern XLogRecPtr ptrack_read_block(RelFileNode smgr_rnode,
+				  ForkNumber forknum, BlockNumber blocknum);
 
 extern bool is_cfm_file_path(const char *path);
 #ifdef PGPRO_EE

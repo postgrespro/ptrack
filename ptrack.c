@@ -410,6 +410,7 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 	char	   *fullpath;
 	struct stat fst;
 	off_t       rel_st_size = 0;
+	XLogRecPtr  maxlsn;
 #if CFS_SUPPORT
 	RelFileNodeBackend rnodebackend;
 #endif
@@ -458,6 +459,19 @@ get_next:
 		elog(DEBUG3, "ptrack: skip empty file %s", fullpath);
 
 		/* But try the next one */
+		goto get_next;
+	}
+
+	maxlsn = ptrack_read_block(pfl->relnode,
+							pfl->forknum, InvalidBlockNumber);
+
+	if (maxlsn < ctx->lsn)
+	{
+		elog(DEBUG3, "ptrack: skip file %s: maxlsn is %X/%X, expected %X/%X",
+				fullpath, (uint32) (maxlsn >> 32), (uint32) maxlsn,
+				(uint32) (ctx->lsn >> 32), (uint32) ctx->lsn);
+
+		/* Try the next one */
 		goto get_next;
 	}
 
