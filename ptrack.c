@@ -462,8 +462,7 @@ get_next:
 		goto get_next;
 	}
 
-	maxlsn = ptrack_read_block(pfl->relnode,
-							pfl->forknum, InvalidBlockNumber);
+	maxlsn = ptrack_read_file_maxlsn(pfl->relnode, pfl->forknum);
 
 	if (maxlsn < ctx->lsn)
 	{
