@@ -47,6 +47,8 @@
 #define nodeOf(ndbck)		(ndbck).node
 #endif
 
+#define lsn_diff(lsn1, lsn2)	((int32)(lsn1-lsn2))
+#define lsn_advance(lsn, incr)	((uint32)(lsn+incr))
 /*
  * Structure identifying block on the disk.
  */
@@ -62,7 +64,7 @@ typedef struct PtBlockId
  */
 typedef struct PtScanCtx
 {
-	XLogRecPtr	lsn;
+	uint32		lsn;
 	PtBlockId	bid;
 	uint32		relsize;
 	char	   *relpath;

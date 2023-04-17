@@ -521,7 +521,7 @@ ptrack_init_lsn(PG_FUNCTION_ARGS)
 {
 	if (ptrack_map != NULL)
 	{
-		XLogRecPtr	init_lsn = pg_atomic_read_u64(&ptrack_map->init_lsn);
+		XLogRecPtr	init_lsn = (XLogRecPtr) (pg_atomic_read_u32(&ptrack_map->init_lsn) << 16);
 
 		PG_RETURN_LSN(init_lsn);
 	}
@@ -546,6 +546,8 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 	datapagemap_t pagemap;
 	int64		pagecount = 0;
 	char		gather_path[MAXPGPATH];
+	uint32		init_lsn = InvalidXLogRecPtr;
+	bool		within_ptrack_map = true;
 
 	/* Exit immediately if there is no map */
 	if (ptrack_map == NULL)
@@ -554,13 +556,14 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 	if (SRF_IS_FIRSTCALL())
 	{
 		TupleDesc	tupdesc;
+		XLogRecPtr	lsn = PG_GETARG_LSN(0);
 
 		funcctx = SRF_FIRSTCALL_INIT();
 
 		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
 
 		ctx = (PtScanCtx *) palloc0(sizeof(PtScanCtx));
-		ctx->lsn = PG_GETARG_LSN(0);
+		ctx->lsn = (uint32)(lsn >> 16);
 		ctx->filelist = NIL;
 
 		/* Make tuple descriptor */
@@ -610,8 +613,8 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		uint64		hash;
 		size_t		slot1;
 		size_t		slot2;
-		XLogRecPtr	update_lsn1;
-		XLogRecPtr	update_lsn2;
+		uint32		update_lsn1;
+		uint32		update_lsn2;
 
 		/* Stop traversal if there are no more segments */
 		if (ctx->bid.blocknum >= ctx->relsize)
@@ -651,29 +654,36 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 				SRF_RETURN_DONE(funcctx);
 		}
 
+		init_lsn = pg_atomic_read_u32(&ptrack_map->init_lsn);
 		hash = BID_HASH_FUNC(ctx->bid);
 		slot1 = (size_t)(hash % PtrackContentNblocks);
 
-		update_lsn1 = pg_atomic_read_u64(&ptrack_map->entries[slot1]);
+		update_lsn1 = pg_atomic_read_u32(&ptrack_map->entries[slot1]);
 
 		if (update_lsn1 != InvalidXLogRecPtr)
 			elog(DEBUG3, "ptrack: update_lsn1 %X/%X of blckno %u of file %s",
-				 (uint32) (update_lsn1 >> 32), (uint32) update_lsn1,
+				 (uint16) (update_lsn1 >> 16), (uint16) update_lsn1,
 				 ctx->bid.blocknum, ctx->relpath);
 
+		if (init_lsn != InvalidXLogRecPtr)
+			within_ptrack_map = lsn_diff(init_lsn, update_lsn1) <= 0;
+
 		/* Only probe the second slot if the first one is marked */
-		if (update_lsn1 >= ctx->lsn)
+		if (within_ptrack_map && lsn_diff(ctx->lsn, update_lsn1) <= 0)
 		{
 			slot2 = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
-			update_lsn2 = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
+			update_lsn2 = pg_atomic_read_u32(&ptrack_map->entries[slot2]);
 
 			if (update_lsn2 != InvalidXLogRecPtr)
 				elog(DEBUG3, "ptrack: update_lsn2 %X/%X of blckno %u of file %s",
-					 (uint32) (update_lsn1 >> 32), (uint32) update_lsn2,
+					 (uint16) (update_lsn1 >> 16), (uint16) update_lsn2,
 					 ctx->bid.blocknum, ctx->relpath);
 
+			if (init_lsn != InvalidXLogRecPtr)
+				within_ptrack_map = lsn_diff(init_lsn, update_lsn2) <= 0;
+
 			/* Block has been changed since specified LSN.  Mark it in the bitmap */
-			if (update_lsn2 >= ctx->lsn)
+			if (within_ptrack_map && lsn_diff(ctx->lsn, update_lsn2) <= 0)
 			{
 				pagecount += 1;
 				datapagemap_add(&pagemap, ctx->bid.blocknum % ((BlockNumber) RELSEG_SIZE));
