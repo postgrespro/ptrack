@@ -258,7 +258,7 @@ ptrackMapReadFromFile(const char *ptrack_path)
 		 * postmaster is the only user right now.
 		 */
 		elog(DEBUG1, "ptrack read map: crc %u, file_crc %u, init_lsn %X/%X",
-			 crc, *file_crc, (uint32) (ptrack_map->init_lsn.value >> 32), (uint32) ptrack_map->init_lsn.value);
+			 crc, *file_crc, (uint16) (ptrack_map->init_lsn.value >> 16), (uint16) ptrack_map->init_lsn.value);
 
 		if (!EQ_CRC32C(*file_crc, crc))
 		{
@@ -330,7 +330,7 @@ ptrackMapInit(void)
 		 * Fill entries with InvalidXLogRecPtr
 		 * (InvalidXLogRecPtr is actually 0)
 		 */
-		memset(ptrack_map->entries, 0, PtrackContentNblocks * sizeof(pg_atomic_uint64));
+		memset(ptrack_map->entries, 0, PtrackContentNblocks * sizeof(pg_atomic_uint32));
 		/*
 		 * Last part of memory representation of ptrack_map (crc) is actually unused
 		 * so leave it as it is
@@ -348,8 +348,8 @@ ptrackCheckpoint(void)
 	pg_crc32c	crc;
 	char		ptrack_path[MAXPGPATH];
 	char		ptrack_path_tmp[MAXPGPATH];
-	XLogRecPtr	init_lsn;
-	pg_atomic_uint64 buf[PTRACK_BUF_SIZE];
+	uint32		init_lsn;
+	pg_atomic_uint32 buf[PTRACK_BUF_SIZE];
 	struct stat stat_buf;
 	uint64		i = 0;
 	uint64		j = 0;
@@ -408,20 +408,23 @@ ptrackCheckpoint(void)
 	ptrack_write_chunk(ptrack_tmp_fd, &crc, (char *) ptrack_map,
 					   offsetof(PtrackMapHdr, init_lsn));
 
-	init_lsn = pg_atomic_read_u64(&ptrack_map->init_lsn);
+	init_lsn = pg_atomic_read_u32(&ptrack_map->init_lsn);
 
 	/* Set init_lsn during checkpoint if it is not set yet */
 	if (init_lsn == InvalidXLogRecPtr)
 	{
 		XLogRecPtr	new_init_lsn;
+		uint32		new_init_lsn32;
 
 		if (RecoveryInProgress())
 			new_init_lsn = GetXLogReplayRecPtr(NULL);
 		else
 			new_init_lsn = GetXLogInsertRecPtr();
 
-		pg_atomic_write_u64(&ptrack_map->init_lsn, new_init_lsn);
-		init_lsn = new_init_lsn;
+		new_init_lsn32 = (uint32)(new_init_lsn >> 16);
+
+		pg_atomic_write_u32(&ptrack_map->init_lsn, new_init_lsn32);
+		init_lsn = new_init_lsn32;
 	}
 
 	/* Put init_lsn in the same buffer */
@@ -435,7 +438,7 @@ ptrackCheckpoint(void)
 	 */
 	while (i < PtrackContentNblocks)
 	{
-		XLogRecPtr	lsn;
+		uint32	lsn;
 
 		/*
 		 * We store LSN values as pg_atomic_uint64 in the ptrack map, but
@@ -445,7 +448,7 @@ ptrackCheckpoint(void)
 		 *
 		 * TODO: is it safe and can we do any better?
 		 */
-		lsn = pg_atomic_read_u64(&ptrack_map->entries[i]);
+		lsn = pg_atomic_read_u32(&ptrack_map->entries[i]);
 		buf[j].value = lsn;
 
 		i++;
@@ -472,7 +475,7 @@ ptrackCheckpoint(void)
 	/* Write if anything left */
 	if ((i + 1) % PTRACK_BUF_SIZE != 0)
 	{
-		size_t		writesz = sizeof(pg_atomic_uint64) * j;
+		size_t		writesz = sizeof(pg_atomic_uint32) * j;
 
 		ptrack_write_chunk(ptrack_tmp_fd, &crc, (char *) buf, writesz);
 		elog(DEBUG5, "ptrack checkpoint: final i " UINT64_FORMAT ", j " UINT64_FORMAT ", writesz %zu PtrackContentNblocks " UINT64_FORMAT,
@@ -684,12 +687,13 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 	size_t		slot1;
 	size_t		slot2;
 	XLogRecPtr	new_lsn;
+	uint32		new_lsn32;
 	/*
 	 * We use pg_atomic_uint64 here only for alignment purposes, because
 	 * pg_atomic_uint64 is forcedly aligned on 8 bytes during the MSVC build.
 	 */
-	pg_atomic_uint64	old_lsn;
-	pg_atomic_uint64	old_init_lsn;
+	pg_atomic_uint32	old_lsn;
+	pg_atomic_uint32	old_init_lsn;
 
 	if (ptrack_map_size == 0
 		|| ptrack_map == NULL
@@ -710,25 +714,27 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 	else
 		new_lsn = GetXLogInsertRecPtr();
 
+	new_lsn32 = (uint32)(new_lsn >> 16);
+
 	/* Atomically assign new init LSN value */
-	old_init_lsn.value = pg_atomic_read_u64(&ptrack_map->init_lsn);
+	old_init_lsn.value = pg_atomic_read_u32(&ptrack_map->init_lsn);
 	if (old_init_lsn.value == InvalidXLogRecPtr)
 	{
-		elog(DEBUG1, "ptrack_mark_block: init_lsn " UINT64_FORMAT " <- " UINT64_FORMAT, old_init_lsn.value, new_lsn);
+		elog(DEBUG1, "ptrack_mark_block: init_lsn %u <- %u", old_init_lsn.value, new_lsn32);
 
-		while (old_init_lsn.value < new_lsn &&
-			   !pg_atomic_compare_exchange_u64(&ptrack_map->init_lsn, (uint64 *) &old_init_lsn.value, new_lsn));
+		while (old_init_lsn.value < new_lsn32 &&
+			   !pg_atomic_compare_exchange_u32(&ptrack_map->init_lsn, (uint32 *) &old_init_lsn.value, new_lsn32));
 	}
 
 	/* Atomically assign new LSN value to the first slot */
-	old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[slot1]);
-	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, slot1, old_lsn.value, new_lsn);
-	while (old_lsn.value < new_lsn &&
-		   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[slot1], (uint64 *) &old_lsn.value, new_lsn));
+	old_lsn.value = pg_atomic_read_u32(&ptrack_map->entries[slot1]);
+	elog(DEBUG3, "ptrack_mark_block: map[%zu]=%u <- %u", slot1, old_lsn.value, new_lsn32);
+	while (old_lsn.value < new_lsn32 &&
+		   !pg_atomic_compare_exchange_u32(&ptrack_map->entries[slot1], (uint32 *) &old_lsn.value, new_lsn32));
 
 	/* And to the second */
-	old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
-	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, slot2, old_lsn.value, new_lsn);
-	while (old_lsn.value < new_lsn &&
-		   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[slot2], (uint64 *) &old_lsn.value, new_lsn));
+	old_lsn.value = pg_atomic_read_u32(&ptrack_map->entries[slot2]);
+	elog(DEBUG3, "ptrack_mark_block: map[%zu]=%u <- %u", slot2, old_lsn.value, new_lsn32);
+	while (old_lsn.value < new_lsn32 &&
+		   !pg_atomic_compare_exchange_u32(&ptrack_map->entries[slot2], (uint32 *) &old_lsn.value, new_lsn32));
 }

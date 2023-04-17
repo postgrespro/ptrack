@@ -62,7 +62,7 @@ typedef struct PtBlockId
  */
 typedef struct PtScanCtx
 {
-	XLogRecPtr	lsn;
+	uint32		lsn;
 	PtBlockId	bid;
 	uint32		relsize;
 	char	   *relpath;

@@ -66,10 +66,10 @@ typedef struct PtrackMapHdr
 	uint32		version_num;
 
 	/* LSN of the moment, when map was last enabled. */
-	pg_atomic_uint64 init_lsn;
+	pg_atomic_uint32 init_lsn;
 
 	/* Followed by the actual map of LSNs */
-	pg_atomic_uint64 entries[FLEXIBLE_ARRAY_MEMBER];
+	pg_atomic_uint32 entries[FLEXIBLE_ARRAY_MEMBER];
 
 	/*
 	 * At the end of the map CRC of type pg_crc32c is stored.
@@ -80,11 +80,11 @@ typedef PtrackMapHdr * PtrackMap;
 
 /* Number of elements in ptrack map (LSN array)  */
 #define PtrackContentNblocks \
-		((ptrack_map_size - offsetof(PtrackMapHdr, entries) - sizeof(pg_crc32c)) / sizeof(pg_atomic_uint64))
+		((ptrack_map_size - offsetof(PtrackMapHdr, entries) - sizeof(pg_crc32c)) / sizeof(pg_atomic_uint32))
 
 /* Actual size of the ptrack map, that we are able to fit into ptrack_map_size */
 #define PtrackActualSize \
-		(offsetof(PtrackMapHdr, entries) + PtrackContentNblocks * sizeof(pg_atomic_uint64) + sizeof(pg_crc32c))
+		(offsetof(PtrackMapHdr, entries) + PtrackContentNblocks * sizeof(pg_atomic_uint32) + sizeof(pg_crc32c))
 
 /* CRC32 value offset in order to directly access it in the shared memory chunk */
 #define PtrackCrcOffset (PtrackActualSize - sizeof(pg_crc32c))
