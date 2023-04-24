@@ -200,19 +200,6 @@ index 269ed6446e6..6318a8c1f55 100644
  	/* end of list */
  	{NULL, false}
  };
-diff --git a/src/include/port/pg_crc32c.h b/src/include/port/pg_crc32c.h
-index d7668651ba8..33994a27f5f 100644
---- a/src/include/port/pg_crc32c.h
-+++ b/src/include/port/pg_crc32c.h
-@@ -69,7 +69,7 @@ extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t le
- #define FIN_CRC32C(crc) ((crc) ^= 0xFFFFFFFF)
- 
- extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
--extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
-+extern PGDLLIMPORT pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
- 
- #ifdef USE_SSE42_CRC32C_WITH_RUNTIME_CHECK
- extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t len);
 diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
 index 50a26edeb06..af1602f5154 100644
 --- a/src/include/storage/copydir.h
@@ -224,8 +211,8 @@ index 50a26edeb06..af1602f5154 100644
 +typedef void (*copydir_hook_type) (const char *path);
 +extern PGDLLIMPORT copydir_hook_type copydir_hook;
 +
- extern void copydir(char *fromdir, char *todir, bool recurse);
- extern void copy_file(char *fromfile, char *tofile);
+ extern void copydir(const char *fromdir, const char *todir, bool recurse);
+ extern void copy_file(const char *fromfile, const char *tofile);
  
 diff --git a/src/include/storage/md.h b/src/include/storage/md.h
 index 10aa1b0109b..1415675824e 100644

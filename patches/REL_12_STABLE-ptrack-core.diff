@@ -225,24 +225,6 @@ index 61a24c2e3c6..cbd46d0cb02 100644
  
  #define IsBootstrapProcessingMode() (Mode == BootstrapProcessing)
  #define IsInitProcessingMode()		(Mode == InitProcessing)
-diff --git a/src/include/port/pg_crc32c.h b/src/include/port/pg_crc32c.h
-index fbd079d2439..01682035e0b 100644
---- a/src/include/port/pg_crc32c.h
-+++ b/src/include/port/pg_crc32c.h
-@@ -69,8 +69,11 @@ extern pg_crc32c pg_comp_crc32c_armv8(pg_crc32c crc, const void *data, size_t le
- #define FIN_CRC32C(crc) ((crc) ^= 0xFFFFFFFF)
- 
- extern pg_crc32c pg_comp_crc32c_sb8(pg_crc32c crc, const void *data, size_t len);
--extern pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
--
-+extern
-+#ifndef FRONTEND
-+PGDLLIMPORT
-+#endif
-+pg_crc32c (*pg_comp_crc32c) (pg_crc32c crc, const void *data, size_t len);
- #ifdef USE_SSE42_CRC32C_WITH_RUNTIME_CHECK
- extern pg_crc32c pg_comp_crc32c_sse42(pg_crc32c crc, const void *data, size_t len);
- #endif
 diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
 index 525cc6203e1..9481e1c5a88 100644
 --- a/src/include/storage/copydir.h
@@ -289,3 +271,16 @@ index 16428c5f5fb..6b0cd8f8eea 100644
  extern void InitSync(void);
  extern void SyncPreCheckpoint(void);
  extern void SyncPostCheckpoint(void);
+diff --git a/src/tools/msvc/Mkvcbuild.pm b/src/tools/msvc/Mkvcbuild.pm
+index 1bdc33d7168..83b1190775f 100644
+--- a/src/tools/msvc/Mkvcbuild.pm
++++ b/src/tools/msvc/Mkvcbuild.pm
+@@ -33,7 +33,7 @@ my @unlink_on_exit;
+ # Set of variables for modules in contrib/ and src/test/modules/
+ my $contrib_defines = { 'refint' => 'REFINT_VERBOSE' };
+ my @contrib_uselibpq = ('dblink', 'oid2name', 'postgres_fdw', 'vacuumlo');
+-my @contrib_uselibpgport   = ('oid2name', 'pg_standby', 'vacuumlo');
++my @contrib_uselibpgport   = ('oid2name', 'pg_standby', 'vacuumlo', 'ptrack');
+ my @contrib_uselibpgcommon = ('oid2name', 'pg_standby', 'vacuumlo');
+ my $contrib_extralibs      = undef;
+ my $contrib_extraincludes = { 'dblink' => ['src/backend'] };
