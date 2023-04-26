@@ -65,6 +65,8 @@ typedef struct PtrackMapHdr
 	 */
 	uint32		version_num;
 
+	/* LSN of current writing position */
+	pg_atomic_uint32 latest_lsn;
 	/* LSN of the moment, when map was last enabled. */
 	pg_atomic_uint32 init_lsn;
 
@@ -94,6 +96,7 @@ typedef PtrackMapHdr * PtrackMap;
 #define BID_HASH_FUNC(bid) \
 		(DatumGetUInt64(hash_any_extended((unsigned char *)&bid, sizeof(bid), 0)))
 
+#define PtrackLSNGap	10e8
 /*
  * Per process pointer to shared ptrack_map
  */
