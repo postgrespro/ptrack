@@ -651,7 +651,7 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		/* Only probe the second slot if the first one is marked */
 		if (update_lsn1 >= ctx->lsn)
 		{
-			slot2 = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
+			slot2 = get_slot2(slot1, hash);
 			update_lsn2 = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
 
 			if (update_lsn2 != InvalidXLogRecPtr)
