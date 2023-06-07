@@ -467,8 +467,8 @@ get_next:
 	if (maxlsn < ctx->lsn)
 	{
 		elog(DEBUG3, "ptrack: skip file %s: maxlsn is %X/%X, expected %X/%X",
-				fullpath, (uint32) (maxlsn >> 32), (uint32) maxlsn,
-				(uint32) (ctx->lsn >> 32), (uint32) ctx->lsn);
+				fullpath, (uint16) (maxlsn >> 16), (uint16) maxlsn,
+				(uint16) (ctx->lsn >> 16), (uint16) ctx->lsn);
 
 		/* Try the next one */
 		goto get_next;
@@ -671,7 +671,7 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		/* Only probe the second slot if the first one is marked */
 		if (within_ptrack_map && lsn_diff(ctx->lsn, update_lsn1) <= 0)
 		{
-			slot2 = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
+			slot2 = get_slot2(slot1, hash);
 			update_lsn2 = pg_atomic_read_u32(&ptrack_map->entries[slot2]);
 
 			if (update_lsn2 != InvalidXLogRecPtr)

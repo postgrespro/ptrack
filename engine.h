@@ -40,6 +40,14 @@
  */
 #define PTRACK_BUF_SIZE ((uint64) 8000)
 
+/*
+ * A reasonable assumption for most systems. Postgres core
+ * leverages the same value for this purpose.
+ */
+#define CACHE_LINE_SIZE	64
+#define CACHE_LINE_ALIGN(LEN)	TYPEALIGN(CACHE_LINE_SIZE, (LEN))
+#define ENTRIES_PER_LINE		(CACHE_LINE_SIZE/sizeof(XLogRecPtr))
+
 /* Ptrack magic bytes */
 #define PTRACK_MAGIC "ptk"
 #define PTRACK_MAGIC_SIZE 4
@@ -122,6 +130,7 @@ extern XLogRecPtr ptrack_read_file_maxlsn(RelFileNode smgr_rnode,
 							  ForkNumber forknum);
 
 extern bool is_cfm_file_path(const char *path);
+extern size_t get_slot2(size_t slot1, uint64 hash);
 #ifdef PGPRO_EE
 extern off_t    get_cfs_relation_file_decompressed_size(RelFileNodeBackend rnode,
 					const char *fullpath, ForkNumber forknum);

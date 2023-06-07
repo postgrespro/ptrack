@@ -687,6 +687,35 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 }
 
 /*
+ * Get a second position within ptrack map so that it fits 
+ * within the same cache line.
+ */
+size_t
+get_slot2(size_t slot1, uint64 hash) {
+	size_t		cache_line_ep;	// ending point of a cache line
+	size_t		cache_line_sp;	// starting point of a cache line
+	size_t		cache_line_interval;
+	size_t		slot2;
+
+	/* Get the ending point of a cache line within entries[]. */
+	cache_line_ep = (CACHE_LINE_ALIGN(offsetof(PtrackMapHdr, entries) + slot1*sizeof(XLogRecPtr))
+			- offsetof(PtrackMapHdr, entries)) / sizeof(XLogRecPtr);
+	/* handling an overflow beyond the entries boundary */
+	cache_line_ep = cache_line_ep > PtrackContentNblocks ? PtrackContentNblocks : cache_line_ep;
+
+	/* Get the starting point of a cache line within entries[]. */
+	cache_line_sp = cache_line_ep - ENTRIES_PER_LINE;
+
+	/* Handling overflow below zero (sp then must be larger than ep) */
+	cache_line_sp = cache_line_sp > cache_line_ep ? 0 : cache_line_sp;
+
+	cache_line_interval = cache_line_ep - cache_line_sp;
+	slot2 = (size_t)(cache_line_sp + (((hash << 32) | (hash >> 32)) % cache_line_interval));
+	slot2 = (slot1 == slot2) ? ((slot1+1) % cache_line_interval) : slot2;
+	return slot2;
+}
+
+/*
  * Mark modified block in ptrack_map.
  */
 static void swap_slots(size_t *slot1, size_t *slot2) {
@@ -738,7 +767,6 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 	 * We use pg_atomic_uint64 here only for alignment purposes, because
 	 * pg_atomic_uint64 is forcedly aligned on 8 bytes during the MSVC build.
 	 */
-	pg_atomic_uint32	old_lsn;
 	pg_atomic_uint32	old_init_lsn;
 
 	if (ptrack_map_size == 0
@@ -753,7 +781,7 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 
 	hash = BID_HASH_FUNC(bid);
 	slot1 = (size_t)(hash % PtrackContentNblocks);
-	slot2 = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
+	slot2 = get_slot2(slot1, hash);
 
 	bid.blocknum = InvalidBlockNumber;
 	hash = BID_HASH_FUNC(bid);
@@ -807,8 +835,8 @@ XLogRecPtr ptrack_read_file_maxlsn(RelFileNode rnode, ForkNumber forknum)
 	if (slot2 < slot1)
 		swap_slots(&slot1, &slot2);
 
-	update_lsn1 = pg_atomic_read_u64(&ptrack_map->entries[slot1]);
-	update_lsn2 = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
+	update_lsn1 = pg_atomic_read_u32(&ptrack_map->entries[slot1]);
+	update_lsn2 = pg_atomic_read_u32(&ptrack_map->entries[slot2]);
 
 	return update_lsn1 == update_lsn2 ? update_lsn1 : InvalidXLogRecPtr;
 }
