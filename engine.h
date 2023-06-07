@@ -44,9 +44,9 @@
  * A reasonable assumption for most systems. Postgres core
  * leverages the same value for this purpose.
  */
-#define CACHE_LINE_SIZE	64
-#define CACHE_LINE_ALIGN(LEN)	TYPEALIGN(CACHE_LINE_SIZE, (LEN))
-#define ENTRIES_PER_LINE		(CACHE_LINE_SIZE/sizeof(XLogRecPtr))
+#define MEMORY_PAGE_SIZE	4096
+#define MEMORY_PAGE_ALIGN(LEN)	TYPEALIGN(MEMORY_PAGE_SIZE, (LEN))
+#define ENTRIES_PER_PAGE		(MEMORY_PAGE_SIZE/sizeof(XLogRecPtr))
 
 /* Ptrack magic bytes */
 #define PTRACK_MAGIC "ptk"

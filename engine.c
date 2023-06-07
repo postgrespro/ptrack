@@ -692,36 +692,27 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
  */
 size_t
 get_slot2(size_t slot1, uint64 hash) {
-	size_t		cache_line_ep;	// ending point of a cache line
-	size_t		cache_line_sp;	// starting point of a cache line
-	size_t		cache_line_interval;
+	size_t		memory_page_ep;	// ending point of a cache line
+	size_t		memory_page_sp;	// starting point of a cache line
+	size_t		memory_page_interval;
 	size_t		slot2;
 
-	/* Get the ending point of a cache line within entries[]. */
-	cache_line_ep = (CACHE_LINE_ALIGN(offsetof(PtrackMapHdr, entries) + slot1*sizeof(XLogRecPtr))
-			- offsetof(PtrackMapHdr, entries)) / sizeof(XLogRecPtr);
+	/* Get the ending point of a memory page within entries[]. */
+	memory_page_ep = (MEMORY_PAGE_ALIGN(offsetof(PtrackMapHdr, entries) + slot1*sizeof(uint32))
+			- offsetof(PtrackMapHdr, entries)) / sizeof(uint32);
 	/* handling an overflow beyond the entries boundary */
-	cache_line_ep = cache_line_ep > PtrackContentNblocks ? PtrackContentNblocks : cache_line_ep;
+	memory_page_ep = memory_page_ep > PtrackContentNblocks ? PtrackContentNblocks : memory_page_ep;
 
 	/* Get the starting point of a cache line within entries[]. */
-	cache_line_sp = cache_line_ep - ENTRIES_PER_LINE;
+	memory_page_sp = memory_page_ep - ENTRIES_PER_PAGE;
 
 	/* Handling overflow below zero (sp then must be larger than ep) */
-	cache_line_sp = cache_line_sp > cache_line_ep ? 0 : cache_line_sp;
+	memory_page_sp = memory_page_sp > memory_page_ep ? 0 : memory_page_sp;
 
-	cache_line_interval = cache_line_ep - cache_line_sp;
-	slot2 = (size_t)(cache_line_sp + (((hash << 32) | (hash >> 32)) % cache_line_interval));
-	slot2 = (slot1 == slot2) ? ((slot1+1) % cache_line_interval) : slot2;
+	memory_page_interval = memory_page_ep - memory_page_sp;
+	slot2 = (size_t)(memory_page_sp + (((hash << 32) | (hash >> 32)) % memory_page_interval));
+	slot2 = (slot1 == slot2) ? ((slot1+1) % memory_page_interval) : slot2;
 	return slot2;
-}
-
-/*
- * Mark modified block in ptrack_map.
- */
-static void swap_slots(size_t *slot1, size_t *slot2) {
-	*slot1 ^= *slot2;
-	*slot2 = *slot1 ^ *slot2;
-	*slot1 = *slot1 ^ *slot2;
 }
 
 static void
@@ -786,10 +777,7 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 	bid.blocknum = InvalidBlockNumber;
 	hash = BID_HASH_FUNC(bid);
 	max_lsn_slot1 = (size_t)(hash % PtrackContentNblocks);
-	max_lsn_slot2 = max_lsn_slot1 + 1;
-
-	if (max_lsn_slot2 < max_lsn_slot1)
-		swap_slots(&max_lsn_slot1, &max_lsn_slot2);
+	max_lsn_slot2 = (max_lsn_slot1 + 1) % PtrackContentNblocks;
 
 	if (RecoveryInProgress())
 		new_lsn = GetXLogReplayRecPtr(NULL);
@@ -830,10 +818,7 @@ XLogRecPtr ptrack_read_file_maxlsn(RelFileNode rnode, ForkNumber forknum)
 	hash = BID_HASH_FUNC(bid);
 
 	slot1 = (size_t)(hash % PtrackContentNblocks);
-	slot2 = slot1 + 1;
-
-	if (slot2 < slot1)
-		swap_slots(&slot1, &slot2);
+	slot2 = (slot1 + 1) % PtrackContentNblocks;
 
 	update_lsn1 = pg_atomic_read_u32(&ptrack_map->entries[slot1]);
 	update_lsn2 = pg_atomic_read_u32(&ptrack_map->entries[slot2]);
