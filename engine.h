@@ -44,9 +44,10 @@
  * A reasonable assumption for most systems. Postgres core
  * leverages the same value for this purpose.
  */
-#define MEMORY_PAGE_SIZE	4096
-#define MEMORY_PAGE_ALIGN(LEN)	TYPEALIGN(MEMORY_PAGE_SIZE, (LEN))
-#define ENTRIES_PER_PAGE		(MEMORY_PAGE_SIZE/sizeof(XLogRecPtr))
+#define MEMORY_PAGE_SIZE			4096
+#define MEMORY_PAGE_ALIGN(LEN)		TYPEALIGN(MEMORY_PAGE_SIZE, (LEN))
+#define MEMORY_PAGE_ALIGN_DOWN(LEN)	TYPEALIGN_DOWN(MEMORY_PAGE_SIZE, (LEN))
+#define ENTRIES_PER_PAGE			(MEMORY_PAGE_SIZE/sizeof(uint32))
 
 /* Ptrack magic bytes */
 #define PTRACK_MAGIC "ptk"
@@ -73,6 +74,8 @@ typedef struct PtrackMapHdr
 	 */
 	uint32		version_num;
 
+	/* Padding needed to align entries[] by the page boundary */
+	char padding[4096 - PTRACK_MAGIC_SIZE - sizeof(uint32) - 2*sizeof(pg_atomic_uint32)];
 	/* LSN of current writing position */
 	pg_atomic_uint32 latest_lsn;
 	/* LSN of the moment, when map was last enabled. */
@@ -130,7 +133,7 @@ extern XLogRecPtr ptrack_read_file_maxlsn(RelFileNode smgr_rnode,
 							  ForkNumber forknum);
 
 extern bool is_cfm_file_path(const char *path);
-extern size_t get_slot2(size_t slot1, uint64 hash);
+extern size_t get_slot2(size_t slot1, uint32 hash);
 #ifdef PGPRO_EE
 extern off_t    get_cfs_relation_file_decompressed_size(RelFileNodeBackend rnode,
 					const char *fullpath, ForkNumber forknum);

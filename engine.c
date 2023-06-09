@@ -449,9 +449,9 @@ ptrackCheckpoint(void)
 		uint32	lsn;
 
 		/*
-		 * We store LSN values as pg_atomic_uint64 in the ptrack map, but
-		 * pg_atomic_read_u64() returns uint64.  That way, we have to put this
-		 * lsn into the buffer array of pg_atomic_uint64's.  We are the only
+		 * We store LSN values as pg_atomic_uint32 in the ptrack map, but
+		 * pg_atomic_read_u32() returns uint32.  That way, we have to put this
+		 * lsn into the buffer array of pg_atomic_uint32's.  We are the only
 		 * one who write into this buffer, so we do it without locks.
 		 *
 		 * TODO: is it safe and can we do any better?
@@ -551,7 +551,7 @@ assign_ptrack_map_size(int newval, void *extra)
 		!InitializingParallelWorker)
 	{
 		/* Cast to uint64 in order to avoid int32 overflow */
-		ptrack_map_size = (uint64) 1024 * 1024 * newval;
+		ptrack_map_size = (uint64)(1024 * 1024 * newval);
 
 		elog(DEBUG1, "assign_ptrack_map_size: ptrack_map_size set to " UINT64_FORMAT,
 			 ptrack_map_size);
@@ -688,30 +688,13 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 
 /*
  * Get a second position within ptrack map so that it fits 
- * within the same cache line.
+ * within the same memory page.
  */
-size_t
-get_slot2(size_t slot1, uint64 hash) {
-	size_t		memory_page_ep;	// ending point of a cache line
-	size_t		memory_page_sp;	// starting point of a cache line
-	size_t		memory_page_interval;
-	size_t		slot2;
-
-	/* Get the ending point of a memory page within entries[]. */
-	memory_page_ep = (MEMORY_PAGE_ALIGN(offsetof(PtrackMapHdr, entries) + slot1*sizeof(uint32))
-			- offsetof(PtrackMapHdr, entries)) / sizeof(uint32);
-	/* handling an overflow beyond the entries boundary */
-	memory_page_ep = memory_page_ep > PtrackContentNblocks ? PtrackContentNblocks : memory_page_ep;
-
-	/* Get the starting point of a cache line within entries[]. */
-	memory_page_sp = memory_page_ep - ENTRIES_PER_PAGE;
-
-	/* Handling overflow below zero (sp then must be larger than ep) */
-	memory_page_sp = memory_page_sp > memory_page_ep ? 0 : memory_page_sp;
-
-	memory_page_interval = memory_page_ep - memory_page_sp;
-	slot2 = (size_t)(memory_page_sp + (((hash << 32) | (hash >> 32)) % memory_page_interval));
-	slot2 = (slot1 == slot2) ? ((slot1+1) % memory_page_interval) : slot2;
+inline size_t
+get_slot2(size_t slot1, uint32 hash) {
+	size_t slot2;
+	slot2 = TYPEALIGN_DOWN(ENTRIES_PER_PAGE, slot1) + ((hash << 16) | (hash >> 16)) % ENTRIES_PER_PAGE;
+	slot2 = slot1 == slot2 ? slot2+1 : slot2;
 	return slot2;
 }
 
