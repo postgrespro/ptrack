@@ -36,10 +36,6 @@
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "nodes/pg_list.h"
-#ifdef PGPRO_EE
-/* For file_is_in_cfs_tablespace() only. */
-#include "common/cfs_common.h"
-#endif
 #include "port/pg_crc32c.h"
 #include "storage/copydir.h"
 #include "storage/ipc.h"
@@ -294,12 +290,6 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 {
 	DIR		   *dir;
 	struct dirent *de;
-#if CFS_SUPPORT
-	bool is_cfs;
-
-	is_cfs = file_is_in_cfs_tablespace(path);
-#endif
-
 	dir = AllocateDir(path);
 
 	while ((de = ReadDirExtended(dir, path, LOG)) != NULL)
@@ -312,8 +302,7 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 
 		if (strcmp(de->d_name, ".") == 0 ||
 			strcmp(de->d_name, "..") == 0 ||
-			looks_like_temp_rel_name(de->d_name) ||
-			is_cfm_file_path(de->d_name))
+			looks_like_temp_rel_name(de->d_name))
 			continue;
 
 		snprintf(subpath, sizeof(subpath), "%s/%s", path, de->d_name);
@@ -364,10 +353,6 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 				nodeSpc(pfl->relnode) = spcOid == InvalidOid ? DEFAULTTABLESPACE_OID : spcOid;
 				pfl->path = GetRelationPath(dbOid, nodeSpc(pfl->relnode),
 											nodeRel(pfl->relnode), InvalidBackendId, pfl->forknum);
-#if CFS_SUPPORT
-				pfl->is_cfs_compressed = is_cfs
-					&& md_get_compressor_internal(pfl->relnode, InvalidBackendId, pfl->forknum) != 0;
-#endif
 
 				*filelist = lappend(*filelist, pfl);
 
@@ -410,9 +395,6 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 	char	   *fullpath;
 	struct stat fst;
 	off_t       rel_st_size = 0;
-#if CFS_SUPPORT
-	RelFileNodeBackend rnodebackend;
-#endif
 
 get_next:
 
@@ -461,18 +443,6 @@ get_next:
 		goto get_next;
 	}
 
-#if CFS_SUPPORT
-	nodeOf(rnodebackend) = ctx->bid.relnode;
-	rnodebackend.backend = InvalidBackendId;
-
-	if(pfl->is_cfs_compressed) {
-		rel_st_size = get_cfs_relation_file_decompressed_size(rnodebackend, fullpath, pfl->forknum);
-
-		// Could not open fullpath for some reason, trying the next file.
-		if(rel_st_size == -1)
-			goto get_next;
-	} else
-#endif
 	rel_st_size = fst.st_size;
 
 	if (pfl->segno > 0)
