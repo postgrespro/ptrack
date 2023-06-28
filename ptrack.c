@@ -306,7 +306,10 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 	{
 		char		subpath[MAXPGPATH * 2];
 		struct stat fst;
-		int			sret;
+		int			sret = 0;
+#if SIMPLE_STAT
+		bool		assumeDir = false;
+#endif
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -317,8 +320,15 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 			continue;
 
 		snprintf(subpath, sizeof(subpath), "%s/%s", path, de->d_name);
-
+#if SIMPLE_STAT
+		if (de->d_type == DT_REG)
+			sret = stat(subpath, &fst);
+		else
+			assumeDir = true;
+#else
 		sret = lstat(subpath, &fst);
+#endif
+
 
 		if (sret < 0)
 		{
@@ -328,7 +338,11 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 			continue;
 		}
 
+#if SIMPLE_STAT
+		if (!assumeDir)
+#else
 		if (S_ISREG(fst.st_mode))
+#endif
 		{
 			if (fst.st_size == 0)
 			{
@@ -375,7 +389,12 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 					 pfl->path, nodeRel(pfl->relnode));
 			}
 		}
+#if SIMPLE_STAT
+		else
+		{
+#else
 		else if (S_ISDIR(fst.st_mode))
+#endif
 		{
 			if (strspn(de->d_name + 1, "0123456789") == strlen(de->d_name + 1)
 				&& dbOid == InvalidOid)
@@ -384,10 +403,12 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 				ptrack_gather_filelist(filelist, subpath, spcOid, InvalidOid);
 		}
 		/* TODO: is it enough to properly check symlink support? */
+#if !SIMPLE_STAT 
 #if !defined(WIN32) || (PG_VERSION_NUM >= 160000)
 		else if (S_ISLNK(fst.st_mode))
 #else
 		else if (pgwin32_is_junction(subpath))
+#endif
 #endif
 		{
 			/*
@@ -397,6 +418,9 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 			if (strspn(de->d_name + 1, "0123456789") == strlen(de->d_name + 1))
 				ptrack_gather_filelist(filelist, subpath, atooid(de->d_name), InvalidOid);
 		}
+#if SIMPLE_STAT
+		}
+#endif
 	}
 
 	FreeDir(dir);				/* we ignore any error here */

@@ -49,6 +49,11 @@
 #define CFS_SUPPORT 1
 #endif
 
+/* lstat optimization */
+#if defined(DT_REG) && PG_VERSION_NUM < 130000
+#define SIMPLE_STAT 1
+#endif
+
 /*
  * Header of ptrack map.
  */

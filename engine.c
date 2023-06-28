@@ -641,7 +641,10 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 	{
 		char		subpath[MAXPGPATH * 2];
 		struct stat fst;
-		int			sret;
+		int			sret = 0;
+#if SIMPLE_STAT
+		bool		assumeDir = false;
+#endif
 
 		CHECK_FOR_INTERRUPTS();
 
@@ -651,7 +654,14 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 
 		snprintf(subpath, sizeof(subpath), "%s/%s", path, de->d_name);
 
+#if SIMPLE_STAT
+		if (de->d_type == DT_REG)
+			sret = stat(subpath, &fst);
+		else
+			assumeDir = true;
+#else
 		sret = lstat(subpath, &fst);
+#endif
 
 		if (sret < 0)
 		{
@@ -661,7 +671,11 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 			continue;
 		}
 
+#if SIMPLE_STAT
+		if (!assumeDir)
+#else
 		if (S_ISREG(fst.st_mode))
+#endif
 #if CFS_SUPPORT
 			ptrack_mark_file(dbOid, tablespaceOid, subpath, de->d_name, is_cfs);
 #else
