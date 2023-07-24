@@ -402,12 +402,21 @@ get_next:
 	if (list_length(ctx->filelist) == 0)
 		return -1;
 
+#ifdef foreach_current_index
+	/* Get first file from the head */
+	cell = list_tail(ctx->filelist);
+	pfl = (PtrackFileList_i *) lfirst(cell);
+
+	/* Remove this file from the list */
+	ctx->filelist = list_delete_last(ctx->filelist);
+#else
 	/* Get first file from the head */
 	cell = list_head(ctx->filelist);
 	pfl = (PtrackFileList_i *) lfirst(cell);
 
 	/* Remove this file from the list */
 	ctx->filelist = list_delete_first(ctx->filelist);
+#endif
 
 	if (pfl->segno > 0)
 	{
