@@ -622,10 +622,12 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 
 		update_lsn1 = pg_atomic_read_u64(&ptrack_map->entries[slot1]);
 
+#if USE_ASSERT_CHECKING
 		if (update_lsn1 != InvalidXLogRecPtr)
 			elog(DEBUG3, "ptrack: update_lsn1 %X/%X of blckno %u of file %s",
 				 (uint32) (update_lsn1 >> 32), (uint32) update_lsn1,
 				 ctx->bid.blocknum, ctx->relpath);
+#endif
 
 		/* Only probe the second slot if the first one is marked */
 		if (update_lsn1 >= ctx->lsn)
@@ -633,10 +635,12 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 			slot2 = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
 			update_lsn2 = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
 
+#if USE_ASSERT_CHECKING
 			if (update_lsn2 != InvalidXLogRecPtr)
 				elog(DEBUG3, "ptrack: update_lsn2 %X/%X of blckno %u of file %s",
 					 (uint32) (update_lsn1 >> 32), (uint32) update_lsn2,
 					 ctx->bid.blocknum, ctx->relpath);
+#endif
 
 			/* Block has been changed since specified LSN.  Mark it in the bitmap */
 			if (update_lsn2 >= ctx->lsn)
