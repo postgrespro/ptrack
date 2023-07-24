@@ -629,7 +629,9 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 	old_init_lsn.value = pg_atomic_read_u64(&ptrack_map->init_lsn);
 	if (old_init_lsn.value == InvalidXLogRecPtr)
 	{
+#if USE_ASSERT_CHECKING
 		elog(DEBUG1, "ptrack_mark_block: init_lsn " UINT64_FORMAT " <- " UINT64_FORMAT, old_init_lsn.value, new_lsn);
+#endif
 
 		while (old_init_lsn.value < new_lsn &&
 			   !pg_atomic_compare_exchange_u64(&ptrack_map->init_lsn, (uint64 *) &old_init_lsn.value, new_lsn));
@@ -637,13 +639,17 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 
 	/* Atomically assign new LSN value to the first slot */
 	old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[slot1]);
+#if USE_ASSERT_CHECKING
 	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, slot1, old_lsn.value, new_lsn);
+#endif
 	while (old_lsn.value < new_lsn &&
 		   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[slot1], (uint64 *) &old_lsn.value, new_lsn));
 
 	/* And to the second */
 	old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
+#if USE_ASSERT_CHECKING
 	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, slot2, old_lsn.value, new_lsn);
+#endif
 	while (old_lsn.value < new_lsn &&
 		   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[slot2], (uint64 *) &old_lsn.value, new_lsn));
 }
