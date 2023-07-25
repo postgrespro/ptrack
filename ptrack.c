@@ -394,7 +394,7 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 	ListCell   *cell;
 	char	   *fullpath;
 	struct stat fst;
-	off_t       rel_st_size = 0;
+	uint32_t	rel_st_size = 0;
 
 get_next:
 
@@ -444,15 +444,15 @@ get_next:
 		goto get_next;
 	}
 
-	if (fst.st_size == 0)
+	rel_st_size = fst.st_size;
+
+	if (rel_st_size == 0)
 	{
 		elog(DEBUG3, "ptrack: skip empty file %s", fullpath);
 
 		/* But try the next one */
 		goto get_next;
 	}
-
-	rel_st_size = fst.st_size;
 
 	if (pfl->segno > 0)
 	{
