@@ -4,13 +4,13 @@
 
 ## Overview 
 
-PTRACK saves changes of physical blocks in the memory. You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `PTRACK` engine for taking incremental backups by [pg_probackup](https://github.com/postgrespro/pg_probackup) backup and recovery manager for PostgreSQL.
+PTRACK saves changes of physical blocks in the memory. You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `PTRACK` engine for taking incremental backups by [pg_probackup](https://github.com/postgrespro/pg_probackup).
 
 Current patch are available for [11](https://github.com/postgrespro/ptrack/blob/master/patches/REL_11_STABLE-ptrack-core.diff), [12](https://github.com/postgrespro/ptrack/blob/master/patches/REL_12_STABLE-ptrack-core.diff), [13](https://github.com/postgrespro/ptrack/blob/master/patches/REL_13_STABLE-ptrack-core.diff), [14](https://github.com/postgrespro/ptrack/blob/master/patches/REL_14_STABLE-ptrack-core.diff), [15](https://github.com/postgrespro/ptrack/blob/master/patches/REL_15_STABLE-ptrack-core.diff)
 
 ## Enterprise edition
 
-Enterprise PTRACK are part of Postgres Pro Enterprise and share posibility to track more than 100 000 tables and indexes per time without speed degradation with [CFS (compressed file system)](https://postgrespro.ru/docs/enterprise/15/cfs).
+Enterprise PTRACK are part of [Postgres Pro Backup Enterprise](https://postgrespro.ru/products/postgrespro/enterprise) and share posibility to track more than 100 000 tables and indexes per time without speed degradation with [CFS (compressed file system)](https://postgrespro.ru/docs/enterprise/15/cfs).
 Benchmarks are x5 time faster and useful for ERP and DWH with huge amounth of tables and relations between them.
 
 ## Installation
