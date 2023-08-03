@@ -4,9 +4,9 @@
 
 ## Overview
 
-You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `ptrack` engine for taking incremental backups with [pg_probackup](https://github.com/postgrespro/pg_probackup) backup and recovery manager for PostgreSQL.
+You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `PTRACK` engine for taking incremental backups with [pg_probackup](https://github.com/postgrespro/pg_probackup) backup and recovery manager for PostgreSQL.
 
-It is designed to allow false positives (i.e. block/page is marked in the `ptrack` map, but actually has not been changed), but to never allow false negatives (i.e. loosing any `PGDATA` changes, excepting hint-bits).
+It is designed to allow false positives (i.e. block/page is marked in the `PTRACK` map, but actually has not been changed), but to never allow false negatives (i.e. loosing any `PGDATA` changes, excepting hint-bits).
 
 Currently, `PTRACK` codebase is split between small PostgreSQL core patch and extension. All public SQL API methods and main engine are placed in the `PTRACK` extension, while the core patch contains only certain hooks and modifies binary utilities to ignore `ptrack.map.*` files.
 
@@ -19,7 +19,7 @@ Benchmarcs are x5 time faster and useful for ERP and DWH with huge amounth of ta
 
 ## Installation
 
-1) Get latest `ptrack` sources:
+1) Get latest `PTRACK` sources:
 
 ```shell
 git clone https://github.com/postgrespro/ptrack.git
@@ -46,13 +46,13 @@ echo "shared_preload_libraries = 'ptrack'" >> postgres_data/postgresql.conf
 echo "ptrack.map_size = 64" >> postgres_data/postgresql.conf
 ```
 
-6) Compile and install `ptrack` extension
+6) Compile and install `PTRACK` extension
 
 ```shell
 USE_PGXS=1 make -C /path/to/ptrack/ install
 ```
 
-7) Run PostgreSQL and create `ptrack` extension
+7) Run PostgreSQL and create `PTRACK` extension
 
 ```sql
 postgres=# CREATE EXTENSION ptrack;
@@ -60,9 +60,9 @@ postgres=# CREATE EXTENSION ptrack;
 
 ## Configuration
 
-The only one configurable option is `ptrack.map_size` (in MB). Default is `0`, which means `ptrack` is turned off. In order to reduce number of false positives it is recommended to set `ptrack.map_size` to `1 / 1000` of expected `PGDATA` size (i.e. `1000` for a 1 TB database).
+The only one configurable option is `ptrack.map_size` (in MB). Default is `0`, which means `PTRACK` is turned off. In order to reduce number of false positives it is recommended to set `ptrack.map_size` to `1 / 1000` of expected `PGDATA` size (i.e. `1000` for a 1 TB database).
 
-To disable `ptrack` and clean up all remaining service files set `ptrack.map_size` to `0`.
+To disable `PTRACK` and clean up all remaining service files set `ptrack.map_size` to `0`.
 
 ## Public SQL API
 
@@ -105,7 +105,7 @@ postgres=# SELECT * FROM ptrack_get_change_stat('0/285C8C8');
 
 ## Upgrading
 
-Usually, you have to only install new version of `ptrack` and do `ALTER EXTENSION 'ptrack' UPDATE;`. However, some specific actions may be required as well:
+Usually, you have to only install new version of `PTRACK` and do `ALTER EXTENSION 'ptrack' UPDATE;`. However, some specific actions may be required as well:
 
 #### Upgrading from 2.0.0 to 2.1.*:
 
@@ -116,7 +116,7 @@ Usually, you have to only install new version of `ptrack` and do `ALTER EXTENSIO
 
 #### Upgrading from 2.1.* to 2.2.*:
 
-Since version 2.2 we use a different algorithm for tracking changed pages. Thus, data recorded in the `ptrack.map` using pre 2.2 versions of `ptrack` is incompatible with newer versions. After extension upgrade and server restart old `ptrack.map` will be discarded with `WARNING` and initialized from the scratch.
+Since version 2.2 we use a different algorithm for tracking changed pages. Thus, data recorded in the `ptrack.map` using pre 2.2 versions of `PTRACK` is incompatible with newer versions. After extension upgrade and server restart old `ptrack.map` will be discarded with `WARNING` and initialized from the scratch.
 
 #### Upgrading from 2.2.* to 2.3.*:
 
@@ -129,29 +129,29 @@ Since version 2.2 we use a different algorithm for tracking changed pages. Thus,
 #### Upgrading from 2.3.* to 2.4.*:
 
 * Stop your server
-* Update ptrack binaries
+* Update `PTRACK` binaries
 * Start server
 * Do `ALTER EXTENSION 'ptrack' UPDATE;`.
 
 ## Limitations
 
-1. You can only use `ptrack` safely with `wal_level >= 'replica'`. Otherwise, you can lose tracking of some changes if crash-recovery occurs, since [certain commands are designed not to write WAL at all if wal_level is minimal](https://www.postgresql.org/docs/12/populate.html#POPULATE-PITR), but we only durably flush `ptrack` map at checkpoint time.
+1. You can only use `PTRACK` safely with `wal_level >= 'replica'`. Otherwise, you can lose tracking of some changes if crash-recovery occurs, since [certain commands are designed not to write WAL at all if wal_level is minimal](https://www.postgresql.org/docs/12/populate.html#POPULATE-PITR), but we only durably flush `PTRACK` map at checkpoint time.
 
-2. The only one production-ready backup utility, that fully supports `ptrack` is [pg_probackup](https://github.com/postgrespro/pg_probackup).
+2. The only one production-ready backup utility, that fully supports `PTRACK` is [pg_probackup](https://github.com/postgrespro/pg_probackup).
 
-3. You cannot resize `ptrack` map in runtime, only on postmaster start. Also, you will loose all tracked changes, so it is recommended to do so in the maintainance window and accompany this operation with full backup.
+3. You cannot resize `PTRACK` map in runtime, only on postmaster start. Also, you will loose all tracked changes, so it is recommended to do so in the maintainance window and accompany this operation with full backup.
 
-4. You will need up to `ptrack.map_size * 2` of additional disk space, since `ptrack` uses additional temporary file for durability purpose. See [Architecture section](#Architecture) for details.
+4. You will need up to `ptrack.map_size * 2` of additional disk space, since `PTRACK` uses additional temporary file for durability purpose. See [Architecture section](#Architecture) for details.
 
 ## Benchmarks
 
-Briefly, an overhead of using `ptrack` on TPS usually does not exceed a couple of percent (~1-3%) for a database of dozens to hundreds of gigabytes in size, while the backup time scales down linearly with backup size with a coefficient ~1. It means that an incremental `ptrack` backup of a database with only 20% of changed pages will be 5 times faster than a full backup. More details [here](benchmarks).
+Briefly, an overhead of using `PTRACK` on TPS usually does not exceed a couple of percent (~1-3%) for a database of dozens to hundreds of gigabytes in size, while the backup time scales down linearly with backup size with a coefficient ~1. It means that an incremental `PTRACK` backup of a database with only 20% of changed pages will be 5 times faster than a full backup. More details [here](benchmarks).
 
 ## Architecture
 
-We use a single shared hash table in `ptrack`. Due to the fixed size of the map there may be false positives (when some block is marked as changed without being actually modified), but not false negative results. However, these false postives may be completely eliminated by setting a high enough `ptrack.map_size`.
+We use a single shared hash table in `PTRACK`. Due to the fixed size of the map there may be false positives (when some block is marked as changed without being actually modified), but not false negative results. However, these false postives may be completely eliminated by setting a high enough `ptrack.map_size`.
 
-All reads/writes are made using atomic operations on `uint64` entries, so the map is completely lockless during the normal PostgreSQL operation. Because we do not use locks for read/write access, `ptrack` keeps a map (`ptrack.map`) since the last checkpoint intact and uses up to 1 additional temporary file:
+All reads/writes are made using atomic operations on `uint64` entries, so the map is completely lockless during the normal PostgreSQL operation. Because we do not use locks for read/write access, `PTRACK` keeps a map (`ptrack.map`) since the last checkpoint intact and uses up to 1 additional temporary file:
 
 * temporary file `ptrack.map.tmp` to durably replace `ptrack.map` during checkpoint.
 
@@ -161,7 +161,7 @@ To gather the whole changeset of modified blocks in `ptrack_get_pagemapset()` we
 
 ## Contribution
 
-Feel free to [send pull requests](https://github.com/postgrespro/ptrack/compare), [fill up issues](https://github.com/postgrespro/ptrack/issues/new), or just reach one of us directly (e.g. <[Alexey Kondratov](mailto:a.kondratov@postgrespro.ru?subject=[GitHub]%20Ptrack), [@ololobus](https://github.com/ololobus)>) if you are interested in `ptrack`.
+Feel free to [send pull requests](https://github.com/postgrespro/ptrack/compare), [fill up issues](https://github.com/postgrespro/ptrack/issues/new), or just reach one of us directly (e.g. <[Alexey Kondratov](mailto:a.kondratov@postgrespro.ru?subject=[GitHub]%20Ptrack), [@ololobus](https://github.com/ololobus)>) if you are interested in `PTRACK`.
 
 ### Tests
 
@@ -182,6 +182,6 @@ Available test modes (`MODE`) are `basic` (default) and `paranoia` (per-block ch
 
 ### TODO
 
-* Should we introduce `ptrack.map_path` to allow `ptrack` service files storage outside of `PGDATA`? Doing that we will avoid patching PostgreSQL binary utilities to ignore `ptrack.map.*` files.
-* Can we resize `ptrack` map on restart but keep the previously tracked changes?
-* Can we write a formal proof, that we never loose any modified page with `ptrack`? With TLA+?
+* Should we introduce `ptrack.map_path` to allow `PTRACK` service files storage outside of `PGDATA`? Doing that we will avoid patching PostgreSQL binary utilities to ignore `ptrack.map.*` files.
+* Can we resize `PTRACK` map on restart but keep the previously tracked changes?
+* Can we write a formal proof, that we never loose any modified page with `PTRACK`? With TLA+?
