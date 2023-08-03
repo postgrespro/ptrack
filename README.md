@@ -1,21 +1,17 @@
 [![GitHub release](https://img.shields.io/github/v/release/postgrespro/ptrack?include_prereleases)](https://github.com/postgrespro/ptrack/releases/latest)
 
-# PTRACK is a block-level incremental backup engine for PostgreSQL.
+## PTRACK allows speed up incremental backups for the huge PostgreSQL databases.
 
-## Overview
+## Overview 
 
-You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `PTRACK` engine for taking incremental backups with [pg_probackup](https://github.com/postgrespro/pg_probackup) backup and recovery manager for PostgreSQL.
+PTRACK saves changes of physical blocks in the memory. You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `PTRACK` engine for taking incremental backups by [pg_probackup](https://github.com/postgrespro/pg_probackup) backup and recovery manager for PostgreSQL.
 
-It is designed to allow false positives (i.e. block/page is marked in the `PTRACK` map, but actually has not been changed), but to never allow false negatives (i.e. loosing any `PGDATA` changes, excepting hint-bits).
-
-Currently, `PTRACK` codebase is split between small PostgreSQL core patch and extension. All public SQL API methods and main engine are placed in the `PTRACK` extension, while the core patch contains only certain hooks and modifies binary utilities to ignore `ptrack.map.*` files.
-
-This extension is compatible with PostgreSQL [11](https://github.com/postgrespro/ptrack/blob/master/patches/REL_11_STABLE-ptrack-core.diff), [12](https://github.com/postgrespro/ptrack/blob/master/patches/REL_12_STABLE-ptrack-core.diff), [13](https://github.com/postgrespro/ptrack/blob/master/patches/REL_13_STABLE-ptrack-core.diff), [14](https://github.com/postgrespro/ptrack/blob/master/patches/REL_14_STABLE-ptrack-core.diff), [15](https://github.com/postgrespro/ptrack/blob/master/patches/REL_15_STABLE-ptrack-core.diff)
+Current patch are available for [11](https://github.com/postgrespro/ptrack/blob/master/patches/REL_11_STABLE-ptrack-core.diff), [12](https://github.com/postgrespro/ptrack/blob/master/patches/REL_12_STABLE-ptrack-core.diff), [13](https://github.com/postgrespro/ptrack/blob/master/patches/REL_13_STABLE-ptrack-core.diff), [14](https://github.com/postgrespro/ptrack/blob/master/patches/REL_14_STABLE-ptrack-core.diff), [15](https://github.com/postgrespro/ptrack/blob/master/patches/REL_15_STABLE-ptrack-core.diff)
 
 ## Enterprise edition
 
 Enterprise PTRACK are part of Postgres Pro Enterprise and share posibility to track more than 100 000 tables and indexes per time without speed degradation with [CFS (compressed file system)](https://postgrespro.ru/docs/enterprise/15/cfs).
-Benchmarcs are x5 time faster and useful for ERP and DWH with huge amounth of tables and relations between them.
+Benchmarks are x5 time faster and useful for ERP and DWH with huge amounth of tables and relations between them.
 
 ## Installation
 
@@ -149,6 +145,10 @@ Briefly, an overhead of using `PTRACK` on TPS usually does not exceed a couple o
 
 ## Architecture
 
+It is designed to allow false positives (i.e. block/page is marked in the `PTRACK` map, but actually has not been changed), but to never allow false negatives (i.e. loosing any `PGDATA` changes, excepting hint-bits).
+
+Currently, `PTRACK` codebase is split between small PostgreSQL core patch and extension. All public SQL API methods and main engine are placed in the `PTRACK` extension, while the core patch contains only certain hooks and modifies binary utilities to ignore `ptrack.map.*` files.
+
 We use a single shared hash table in `PTRACK`. Due to the fixed size of the map there may be false positives (when some block is marked as changed without being actually modified), but not false negative results. However, these false postives may be completely eliminated by setting a high enough `ptrack.map_size`.
 
 All reads/writes are made using atomic operations on `uint64` entries, so the map is completely lockless during the normal PostgreSQL operation. Because we do not use locks for read/write access, `PTRACK` keeps a map (`ptrack.map`) since the last checkpoint intact and uses up to 1 additional temporary file:
@@ -179,9 +179,3 @@ docker-compose run tests
 ```
 
 Available test modes (`MODE`) are `basic` (default) and `paranoia` (per-block checksum comparison of `PGDATA` content before and after backup-restore process). Available test cases (`TEST_CASE`) are `tap` (minimalistic PostgreSQL [tap test](https://github.com/postgrespro/ptrack/blob/master/t/001_basic.pl)), `all` or any specific [pg_probackup test](https://github.com/postgrespro/pg_probackup/blob/master/tests/ptrack.py), e.g. `test_ptrack_simple`.
-
-### TODO
-
-* Should we introduce `ptrack.map_path` to allow `PTRACK` service files storage outside of `PGDATA`? Doing that we will avoid patching PostgreSQL binary utilities to ignore `ptrack.map.*` files.
-* Can we resize `PTRACK` map on restart but keep the previously tracked changes?
-* Can we write a formal proof, that we never loose any modified page with `PTRACK`? With TLA+?
