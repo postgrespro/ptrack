@@ -1,18 +1,21 @@
-[![Build Status](https://travis-ci.com/postgrespro/ptrack.svg?branch=master)](https://travis-ci.com/postgrespro/ptrack)
-[![codecov](https://codecov.io/gh/postgrespro/ptrack/branch/master/graph/badge.svg)](https://codecov.io/gh/postgrespro/ptrack)
 [![GitHub release](https://img.shields.io/github/v/release/postgrespro/ptrack?include_prereleases)](https://github.com/postgrespro/ptrack/releases/latest)
 
-# ptrack
+# PTRACK is a block-level incremental backup engine for PostgreSQL.
 
 ## Overview
 
-Ptrack is a block-level incremental backup engine for PostgreSQL. You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `ptrack` engine for taking incremental backups with [pg_probackup](https://github.com/postgrespro/pg_probackup) backup and recovery manager for PostgreSQL.
+You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `ptrack` engine for taking incremental backups with [pg_probackup](https://github.com/postgrespro/pg_probackup) backup and recovery manager for PostgreSQL.
 
 It is designed to allow false positives (i.e. block/page is marked in the `ptrack` map, but actually has not been changed), but to never allow false negatives (i.e. loosing any `PGDATA` changes, excepting hint-bits).
 
-Currently, `ptrack` codebase is split between small PostgreSQL core patch and extension. All public SQL API methods and main engine are placed in the `ptrack` extension, while the core patch contains only certain hooks and modifies binary utilities to ignore `ptrack.map.*` files.
+Currently, `PTRACK` codebase is split between small PostgreSQL core patch and extension. All public SQL API methods and main engine are placed in the `PTRACK` extension, while the core patch contains only certain hooks and modifies binary utilities to ignore `ptrack.map.*` files.
 
-This extension is compatible with PostgreSQL [11](https://github.com/postgrespro/ptrack/blob/master/patches/REL_11_STABLE-ptrack-core.diff), [12](https://github.com/postgrespro/ptrack/blob/master/patches/REL_12_STABLE-ptrack-core.diff), [13](https://github.com/postgrespro/ptrack/blob/master/patches/REL_13_STABLE-ptrack-core.diff), [14](https://github.com/postgrespro/ptrack/blob/master/patches/REL_14_STABLE-ptrack-core.diff).
+This extension is compatible with PostgreSQL [11](https://github.com/postgrespro/ptrack/blob/master/patches/REL_11_STABLE-ptrack-core.diff), [12](https://github.com/postgrespro/ptrack/blob/master/patches/REL_12_STABLE-ptrack-core.diff), [13](https://github.com/postgrespro/ptrack/blob/master/patches/REL_13_STABLE-ptrack-core.diff), [14](https://github.com/postgrespro/ptrack/blob/master/patches/REL_14_STABLE-ptrack-core.diff), [15](https://github.com/postgrespro/ptrack/blob/master/patches/REL_15_STABLE-ptrack-core.diff)
+
+## Enterprise edition
+
+Enterprise PTRACK are part of Postgres Pro Enterprise and share posibility to track more than 100 000 tables and indexes per time without speed degradation with [CFS (compressed file system)](https://postgrespro.ru/docs/enterprise/15/cfs).
+Benchmarcs are x5 time faster and useful for ERP and DWH with huge amounth of tables and relations between them.
 
 ## Installation
 
