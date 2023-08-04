@@ -10,7 +10,7 @@ Current patch are available for PostgreSQL [11](https://github.com/postgrespro/p
 
 ## Enterprise edition
 
-Enterprise PTRACK are part of [Postgres Pro Backup Enterprise](https://postgrespro.ru/products/postgrespro/enterprise) and offers the capability to track more than 100 000 tables and indexes concurrently without any degradation in speed [CFS (compressed file system)](https://postgrespro.ru/docs/enterprise/current/cfs).
+Enterprise PTRACK are part of [Postgres Pro Enterprise](https://postgrespro.ru/products/postgrespro/enterprise) and offers the capability to track more than 100 000 tables and indexes concurrently without any degradation in speed [CFS (compressed file system)](https://postgrespro.ru/docs/enterprise/current/cfs).
 According to benchmarks, it operated up to 5 times faster and useful for ERP and DWH with huge amount of tables and relations between them.
 
 
