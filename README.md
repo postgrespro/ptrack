@@ -1,16 +1,16 @@
 [![GitHub release](https://img.shields.io/github/v/release/postgrespro/ptrack?include_prereleases)](https://github.com/postgrespro/ptrack/releases/latest)
 
-## PTRACK allows speed up incremental backups for the huge PostgreSQL databases.
+## PTRACK 
 
 ## Overview 
 
-PTRACK saves changes of physical blocks in the memory. You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `PTRACK` engine for taking incremental backups by [pg_probackup](https://github.com/postgrespro/pg_probackup).
+PTRACK allows speed up incremental backups for the huge PostgreSQL databases. PTRACK saves changes of physical blocks in the memory. You can [effectively use](https://postgrespro.github.io/pg_probackup/#pbk-setting-up-ptrack-backups) `PTRACK` engine for taking incremental backups by [pg_probackup](https://github.com/postgrespro/pg_probackup).
 
 Current patch are available for [11](https://github.com/postgrespro/ptrack/blob/master/patches/REL_11_STABLE-ptrack-core.diff), [12](https://github.com/postgrespro/ptrack/blob/master/patches/REL_12_STABLE-ptrack-core.diff), [13](https://github.com/postgrespro/ptrack/blob/master/patches/REL_13_STABLE-ptrack-core.diff), [14](https://github.com/postgrespro/ptrack/blob/master/patches/REL_14_STABLE-ptrack-core.diff), [15](https://github.com/postgrespro/ptrack/blob/master/patches/REL_15_STABLE-ptrack-core.diff)
 
 ## Enterprise edition
 
-Enterprise PTRACK are part of [Postgres Pro Backup Enterprise](https://postgrespro.ru/products/postgrespro/enterprise) and share posibility to track more than 100 000 tables and indexes per time without speed degradation with [CFS (compressed file system)](https://postgrespro.ru/docs/enterprise/15/cfs).
+Enterprise PTRACK are part of [Postgres Pro Enterprise](https://postgrespro.ru/products/postgrespro/enterprise) and share posibility to track more than 100 000 tables and indexes per time without speed degradation with [CFS (compressed file system)](https://postgrespro.ru/docs/enterprise/current/cfs).
 Benchmarks are x5 time faster and useful for ERP and DWH with huge amounth of tables and relations between them.
 
 ## Installation
@@ -161,8 +161,7 @@ To gather the whole changeset of modified blocks in `ptrack_get_pagemapset()` we
 
 ## Contribution
 
-Feel free to [send pull requests](https://github.com/postgrespro/ptrack/compare), [fill up issues](https://github.com/postgrespro/ptrack/issues/new), or just reach one of us directly (e.g. <[Alexey Kondratov](mailto:a.kondratov@postgrespro.ru?subject=[GitHub]%20Ptrack), [@ololobus](https://github.com/ololobus)>) if you are interested in `PTRACK`.
-
+Feel free to [send pull requests](https://github.com/postgrespro/ptrack/compare), [fill up issues](https://github.com/postgrespro/ptrack/issues/new).
 ### Tests
 
 Everything is tested automatically with [travis-ci.com](https://travis-ci.com/postgrespro/ptrack) and [codecov.io](https://codecov.io/gh/postgrespro/ptrack), but you can also run tests locally via `Docker`:
@@ -179,3 +178,5 @@ docker-compose run tests
 ```
 
 Available test modes (`MODE`) are `basic` (default) and `paranoia` (per-block checksum comparison of `PGDATA` content before and after backup-restore process). Available test cases (`TEST_CASE`) are `tap` (minimalistic PostgreSQL [tap test](https://github.com/postgrespro/ptrack/blob/master/t/001_basic.pl)), `all` or any specific [pg_probackup test](https://github.com/postgrespro/pg_probackup/blob/master/tests/ptrack.py), e.g. `test_ptrack_simple`.
+
+
