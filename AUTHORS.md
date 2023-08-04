@@ -1,10 +1,10 @@
 # Authors
 
-This list contains all specialists who contributor to project as developer, QA or tech documentor.
+This list contains project contributors: developers, QA or tech writers.
 
 Alexey Kondratov [@ololobus](https://github.com/ololobus)
-Yura Sokolov [@funny-falcon](https://github.com/funny-falcon)
-Anastasia Lubennikova [@alubennikova](https://github.com/alubennikova)
+Yura Sokolov [@funny-falcon](https://github.com/funny-falcon) 
+Anastasia Lubennikova [@alubennikova](https://github.com/alubennikova) 
 Mikhail Kulagin [@kulaginm](https://github.com/kulaginm)
 Daniel Shelepanov [@daniel-95](https://github.com/daniel-95)
 Maxim Orlov [@ziva777](https://github.com/ziva777)
