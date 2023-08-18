@@ -1,5 +1,5 @@
 [![Test](https://github.com/postgrespro/ptrack/actions/workflows/test.yml/badge.svg)](https://github.com/postgrespro/ptrack/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/postgrespro/ptrack/branch/master/graph/badge.svg)](https://codecov.io/gh/postgrespro/ptrack)
+[![Codecov](https://codecov.io/gh/postgrespro/ptrack/branch/master/graph/badge.svg)](https://codecov.io/gh/postgrespro/ptrack)
 [![GitHub release](https://img.shields.io/github/v/release/postgrespro/ptrack?include_prereleases)](https://github.com/postgrespro/ptrack/releases/latest)
 
 # ptrack
@@ -12,7 +12,7 @@ It is designed to allow false positives (i.e. block/page is marked in the `ptrac
 
 Currently, `ptrack` codebase is split between small PostgreSQL core patch and extension. All public SQL API methods and main engine are placed in the `ptrack` extension, while the core patch contains only certain hooks and modifies binary utilities to ignore `ptrack.map.*` files.
 
-This extension is compatible with PostgreSQL [11](https://github.com/postgrespro/ptrack/blob/master/patches/REL_11_STABLE-ptrack-core.diff), [12](https://github.com/postgrespro/ptrack/blob/master/patches/REL_12_STABLE-ptrack-core.diff), [13](https://github.com/postgrespro/ptrack/blob/master/patches/REL_13_STABLE-ptrack-core.diff), [14](https://github.com/postgrespro/ptrack/blob/master/patches/REL_14_STABLE-ptrack-core.diff).
+This extension is compatible with PostgreSQL [11](patches/REL_11_STABLE-ptrack-core.diff), [12](patches/REL_12_STABLE-ptrack-core.diff), [13](patches/REL_13_STABLE-ptrack-core.diff), [14](patches/REL_14_STABLE-ptrack-core.diff), [15](patches/REL_15_STABLE-ptrack-core.diff), [16](patches/REL_16_STABLE-ptrack-core.diff).
 
 ## Installation
 
@@ -162,20 +162,66 @@ Feel free to [send pull requests](https://github.com/postgrespro/ptrack/compare)
 
 ### Tests
 
-Everything is tested automatically with [travis-ci.com](https://travis-ci.com/postgrespro/ptrack) and [codecov.io](https://codecov.io/gh/postgrespro/ptrack), but you can also run tests locally via `Docker`:
+All changes of the source code in this repository are checked by CI - see commit statuses and the project status badge. You can also run tests locally by executing a few Makefile targets.
+
+#### Prerequisites
+
+To run Python tests inbstall the following packages:
+
+OS packages:
+  - python3-pip
+  - python3-six
+  - python3-pytest
+  - python3-pytest-xdist
+
+PIP packages:
+  - testgres
+
+For example, for Ubuntu:
 
 ```sh
-export PG_BRANCH=REL_14_STABLE
-export TEST_CASE=all
-export MODE=paranoia
-
-./make_dockerfile.sh
-
-docker-compose build
-docker-compose run tests
+apt update
+apt install python3-pip python3-six python3-pytest python3-pytest-xdist
+pip3 install testgres
 ```
 
-Available test modes (`MODE`) are `basic` (default) and `paranoia` (per-block checksum comparison of `PGDATA` content before and after backup-restore process). Available test cases (`TEST_CASE`) are `tap` (minimalistic PostgreSQL [tap test](https://github.com/postgrespro/ptrack/blob/master/t/001_basic.pl)), `all` or any specific [pg_probackup test](https://github.com/postgrespro/pg_probackup/blob/master/tests/ptrack.py), e.g. `test_ptrack_simple`.
+#### Testing
+
+```sh
+export PG_BRANCH=REL_15_STABLE
+export PREFIX=/path/to/pgsql
+export PATH=$PREFIX/bin:$PATH
+
+cd /path/to/ptrack
+make patch top_builddir=/path/to/postgres
+
+cd /path/to/postgres
+./configure --prefix=$PREFIX --enable-debug --enable-cassert --enable-depend --enable-tap-tests
+make -sj `nproc` install
+make -C contrib -sj `nproc` install
+
+export USE_PGXS=1
+
+cd /path/to/ptrack
+make install
+make install-pg-probackup top_srcdir=/path/to/postgres
+make test-tap
+make test-python
+```
+
+You can use a public Docker image which already has the necessary build environment (but not the testing prerequisites):
+
+```sh
+docker run  -e USER_ID=`id -u` -it -v $PWD:/work --name=ptrack ghcr.io/postgres-dev/ubuntu-22.04:1.0
+dev@a033797d2f73:~$ 
+```
+
+You can control how tests are executed by using the following environment (or `make`) variables:
+
+| Variable  | Possible values          | Required | Default value  | Description |
+| -         | -                        | -        | -              | -           |
+| TESTS     | A Pytest filter expression | No | Not set (run all Python tests) | A filter to include only selected tests into the run. See the Pytest `-k` option for more information. This variable is only applicable to `test-python` for the tests located in [tests](https://github.com/postgrespro/pg_probackup/tree/master/tests). |
+| TEST_MODE | normal, legacy, paranoia | No       | normal         | The "legacy" mode runs tests in an environment similar to a 32-bit Windows system. This mode is only applicable to `test-tap`. The "paranoia" mode compares the checksums of each block of the database catalog (PGDATA) contents before making a backuo and after the restoration. This mode is only applicable to `test-python`.|
 
 ### TODO
 
