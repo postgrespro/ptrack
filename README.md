@@ -12,7 +12,7 @@ It is designed to allow false positives (i.e. block/page is marked in the `ptrac
 
 Currently, `ptrack` codebase is split between small PostgreSQL core patch and extension. All public SQL API methods and main engine are placed in the `ptrack` extension, while the core patch contains only certain hooks and modifies binary utilities to ignore `ptrack.map.*` files.
 
-This extension is compatible with PostgreSQL [11](patches/REL_11_STABLE-ptrack-core.diff), [12](patches/REL_12_STABLE-ptrack-core.diff), [13](patches/REL_13_STABLE-ptrack-core.diff), [14](patches/REL_14_STABLE-ptrack-core.diff), [15](patches/REL_15_STABLE-ptrack-core.diff), [16](patches/REL_16_STABLE-ptrack-core.diff).
+This extension is compatible with PostgreSQL [11](patches/REL_11_STABLE-ptrack-core.diff), [12](patches/REL_12_STABLE-ptrack-core.diff), [13](patches/REL_13_STABLE-ptrack-core.diff), [14](patches/REL_14_STABLE-ptrack-core.diff), [15](patches/REL_15_STABLE-ptrack-core.diff).
 
 ## Installation
 
