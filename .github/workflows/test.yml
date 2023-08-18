@@ -34,9 +34,7 @@ jobs:
       image: ${{ format('ghcr.io/postgres-dev/{0}:1.0', matrix.os) }}
       env:
         PG_BRANCH: ${{ format('REL_{0}_STABLE', matrix.pg_version) }}
-        PREFIX: /home/dev/pgsql
-        LD_LIBRARY_PATH: /home/dev/pgsql/lib
-        PGDATA: /home/dev/data
+        PGDATA: $HOME/data
         TEST_MODE: ${{ matrix.test_mode }}
       options: --privileged
     steps:
@@ -60,15 +58,9 @@ jobs:
         working-directory: ptrack
       - name: Install Postgres
         run: |
-          if [ $TEST_MODE = legacy ]; then
-            ./configure CFLAGS='-DEXEC_BACKEND' --disable-atomics --prefix=$PREFIX --enable-debug --enable-cassert --enable-depend --enable-tap-tests --quiet
-          else
-            ./configure --prefix=$PREFIX --enable-debug --enable-cassert --enable-depend --enable-tap-tests
-          fi &&
-          make -sj $(nproc) install &&
-          make -C contrib -sj $(nproc) install &&
-          echo $PREFIX/bin >> $GITHUB_PATH
-        working-directory: postgres
+          make install-postgres top_builddir=$GITHUB_WORKSPACE/postgres prefix=$HOME/pgsql &&
+          echo $HOME/pgsql/bin >> $GITHUB_PATH
+        working-directory: ptrack
       - name: Install Ptrack
         run: make install USE_PGXS=1 PG_CPPFLAGS=-coverage SHLIB_LINK=-coverage
         working-directory: ptrack

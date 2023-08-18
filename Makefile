@@ -39,7 +39,24 @@ ifeq ($(MODE), paranoia)
 	git apply --verbose --3way $(CURDIR)/patches/turn-off-hint-bits.diff
 endif
 
+nproc := $(shell nproc)
+prefix ?= $(abspath $(top_builddir)/pgsql)
 TEST_MODE ?= normal
+# Postgres Makefile skips some targets depending on the MAKELEVEL variable so
+# reset it when calling install targets as if they are started directly from the
+# command line
+install-postgres:
+	@cd $(top_builddir) && \
+	if [ "$(TEST_MODE)" = legacy ]; then \
+		./configure CFLAGS='-DEXEC_BACKEND' --disable-atomics --prefix=$(prefix) --enable-debug --enable-cassert --enable-depend --enable-tap-tests --quiet; \
+	else \
+		./configure --prefix=$(prefix) --enable-debug --enable-cassert --enable-depend --enable-tap-tests; \
+	fi && \
+	$(MAKE) -sj $(nproc) install MAKELEVEL=0 && \
+	$(MAKE) -sj $(nproc) -C contrib/ install MAKELEVEL=0
+
+# Now when Postgres is built call all remainig targets with USE_PGXS=1
+
 test-tap:
 ifeq ($(TEST_MODE), legacy)
 	setarch x86_64 --addr-no-randomize $(MAKE) installcheck USE_PGXS=$(USE_PGXS) PG_CONFIG=$(PG_CONFIG)
