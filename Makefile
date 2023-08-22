@@ -79,7 +79,7 @@ test-python:
 	elif [ "$(TEST_MODE)" = paranoia ]; then \
 		env="$$env PG_PROBACKUP_PARANOIA=ON"; \
 	fi; \
-	env $$env python3 -m pytest -svv -n $(PYTEST_PROCESSES)$(if $(TESTS), -k '$(TESTS)') tests/ptrack_test.py
+	env $$env python3 -m pytest -svv$(if $(shell python3 -m pytest --help | grep '\-n '), -n $(PYTEST_PROCESSES))$(if $(TESTS), -k '$(TESTS)') tests/ptrack_test.py
 
 coverage:
 	gcov *.c *.h
