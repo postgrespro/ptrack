@@ -16,40 +16,62 @@ This extension is compatible with PostgreSQL [11](patches/REL_11_STABLE-ptrack-c
 
 ## Installation
 
-1) Get latest `ptrack` sources:
+1) Specify the PostgreSQL branch to work with:
 
 ```shell
-git clone https://github.com/postgrespro/ptrack.git
+export PG_BRANCH=REL_15_STABLE
 ```
 
-2) Get latest PostgreSQL sources:
+2) Get the latest PostgreSQL sources:
 
 ```shell
-git clone https://github.com/postgres/postgres.git -b REL_14_STABLE && cd postgres
+git clone https://github.com/postgres/postgres.git -b $PG_BRANCH
 ```
 
-3) Apply PostgreSQL core patch:
+3) Get the latest `ptrack` sources:
 
 ```shell
-git apply -3 ../ptrack/patches/REL_14_STABLE-ptrack-core.diff
+git clone https://github.com/postgrespro/ptrack.git postgres/contrib/ptrack
 ```
 
-4) Compile and install PostgreSQL
-
-5) Set `ptrack.map_size` (in MB)
+4) Change to the `ptrack` directory:
 
 ```shell
-echo "shared_preload_libraries = 'ptrack'" >> postgres_data/postgresql.conf
-echo "ptrack.map_size = 64" >> postgres_data/postgresql.conf
+cd postgres/contrib/ptrack
 ```
 
-6) Compile and install `ptrack` extension
+5) Apply the PostgreSQL core patch:
 
 ```shell
-USE_PGXS=1 make -C /path/to/ptrack/ install
+make patch
 ```
 
-7) Run PostgreSQL and create `ptrack` extension
+6) Compile and install PostgreSQL:
+
+```shell
+make install-postgres prefix=$PWD/pgsql  # or some other prefix of your choice
+```
+
+7) Add the newly created binaries to the PATH:
+
+```shell
+export PATH=$PWD/pgsql/bin:$PATH
+```
+
+8) Compile and install `ptrack`:
+
+```shell
+make install USE_PGXS=1
+```
+
+9) Set `ptrack.map_size` (in MB):
+
+```shell
+echo "shared_preload_libraries = 'ptrack'" >> <DATA_DIR>/postgresql.conf
+echo "ptrack.map_size = 64" >> <DATA_DIR>/postgresql.conf
+```
+
+10) Run PostgreSQL and create the `ptrack` extension:
 
 ```sql
 postgres=# CREATE EXTENSION ptrack;
@@ -158,13 +180,13 @@ To gather the whole changeset of modified blocks in `ptrack_get_pagemapset()` we
 
 ## Contribution
 
-Feel free to [send pull requests](https://github.com/postgrespro/ptrack/compare), [fill up issues](https://github.com/postgrespro/ptrack/issues/new), or just reach one of us directly (e.g. <[Alexey Kondratov](mailto:a.kondratov@postgrespro.ru?subject=[GitHub]%20Ptrack), [@ololobus](https://github.com/ololobus)>) if you are interested in `ptrack`.
+Feel free to [send a pull request](https://github.com/postgrespro/ptrack/compare), [create an issue](https://github.com/postgrespro/ptrack/issues/new) or [reach us by e-mail](mailto:team-wd40@lists.postgrespro.ru??subject=[GitHub]%20Ptrack) if you are interested in `ptrack`.
 
-### Tests
+## Tests
 
 All changes of the source code in this repository are checked by CI - see commit statuses and the project status badge. You can also run tests locally by executing a few Makefile targets.
 
-#### Prerequisites
+### Prerequisites
 
 To run Python tests inbstall the following packages:
 
@@ -179,49 +201,43 @@ PIP packages:
 
 For example, for Ubuntu:
 
-```sh
-apt update
-apt install python3-pip python3-six python3-pytest python3-pytest-xdist
-pip3 install testgres
+```shell
+sudo apt update
+sudo apt install python3-pip python3-six python3-pytest python3-pytest-xdist
+sudo pip3 install testgres
 ```
 
-#### Testing
+### Testing
 
-```sh
-export PG_BRANCH=REL_15_STABLE
-export PREFIX=/path/to/pgsql
-export PATH=$PREFIX/bin:$PATH
-
-cd /path/to/ptrack
-make patch top_builddir=/path/to/postgres
-
-cd /path/to/postgres
-./configure --prefix=$PREFIX --enable-debug --enable-cassert --enable-depend --enable-tap-tests
-make -sj `nproc` install
-make -C contrib -sj `nproc` install
-
-export USE_PGXS=1
-
-cd /path/to/ptrack
-make install
-make install-pg-probackup top_srcdir=/path/to/postgres
-make test-tap
+Install PostgreSQL and ptrack as described in [Installation](#installation), install the testing prerequisites, then do (assuming the current directory is `ptrack`):
+```shell
+git clone https://github.com/postgrespro/pg_probackup.git ../pg_probackup  # clone the repository into postgres/contrib/pg_probackup
+# remember to export PATH=/path/to/pgsql/bin:$PATH
+make install-pg-probackup USE_PGXS=1 top_srcdir=../..
+make test-tap USE_PGXS=1
 make test-python
+```
+
+If `pg_probackup` is not located in `postgres/contrib` then additionally specify the path to the `pg_probackup` directory when building `pg_probackup`:
+```shell
+make install-pg-probackup USE_PGXS=1 top_srcdir=/path/to/postgres pg_probackup_dir=/path/to/pg_probackup
 ```
 
 You can use a public Docker image which already has the necessary build environment (but not the testing prerequisites):
 
-```sh
+```shell
 docker run  -e USER_ID=`id -u` -it -v $PWD:/work --name=ptrack ghcr.io/postgres-dev/ubuntu-22.04:1.0
 dev@a033797d2f73:~$ 
 ```
 
-You can control how tests are executed by using the following environment (or `make`) variables:
+## Environment variables
 
-| Variable  | Possible values          | Required | Default value  | Description |
-| -         | -                        | -        | -              | -           |
+| Variable  | Possible values | Required | Default value  | Description |
+| -         | -               | -        | -              | -           |
+| NPROC     | An integer greater than 0 | No | Output of `nproc` | The number of threads used for building and running tests |
+| PG_CONFIG | File path | No | pg_config (from the PATH) | The path to the `pg_config` binary |
 | TESTS     | A Pytest filter expression | No | Not set (run all Python tests) | A filter to include only selected tests into the run. See the Pytest `-k` option for more information. This variable is only applicable to `test-python` for the tests located in [tests](https://github.com/postgrespro/pg_probackup/tree/master/tests). |
-| TEST_MODE | normal, legacy, paranoia | No       | normal         | The "legacy" mode runs tests in an environment similar to a 32-bit Windows system. This mode is only applicable to `test-tap`. The "paranoia" mode compares the checksums of each block of the database catalog (PGDATA) contents before making a backuo and after the restoration. This mode is only applicable to `test-python`.|
+| TEST_MODE | normal, legacy, paranoia | No | normal | The "legacy" mode runs tests in an environment similar to a 32-bit Windows system. This mode is only applicable to `test-tap`. The "paranoia" mode compares the checksums of each block of the database catalog (PGDATA) contents before making a backup and after the restoration. This mode is only applicable to `test-python`.|
 
 ### TODO
 
