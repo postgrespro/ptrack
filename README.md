@@ -188,7 +188,7 @@ All changes of the source code in this repository are checked by CI - see commit
 
 ### Prerequisites
 
-To run Python tests inbstall the following packages:
+To run Python tests install the following packages:
 
 OS packages:
   - python3-pip
