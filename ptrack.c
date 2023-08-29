@@ -36,10 +36,6 @@
 #include "funcapi.h"
 #include "miscadmin.h"
 #include "nodes/pg_list.h"
-#ifdef PGPRO_EE
-/* For file_is_in_cfs_tablespace() only. */
-#include "common/cfs_common.h"
-#endif
 #include "port/pg_crc32c.h"
 #include "storage/copydir.h"
 #include "storage/ipc.h"
@@ -294,12 +290,6 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 {
 	DIR		   *dir;
 	struct dirent *de;
-#if CFS_SUPPORT
-	bool is_cfs;
-
-	is_cfs = file_is_in_cfs_tablespace(path);
-#endif
-
 	dir = AllocateDir(path);
 
 	while ((de = ReadDirExtended(dir, path, LOG)) != NULL)
@@ -312,8 +302,7 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 
 		if (strcmp(de->d_name, ".") == 0 ||
 			strcmp(de->d_name, "..") == 0 ||
-			looks_like_temp_rel_name(de->d_name) ||
-			is_cfm_file_path(de->d_name))
+			looks_like_temp_rel_name(de->d_name))
 			continue;
 
 		snprintf(subpath, sizeof(subpath), "%s/%s", path, de->d_name);
@@ -364,10 +353,6 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 				nodeSpc(pfl->relnode) = spcOid == InvalidOid ? DEFAULTTABLESPACE_OID : spcOid;
 				pfl->path = GetRelationPath(dbOid, nodeSpc(pfl->relnode),
 											nodeRel(pfl->relnode), InvalidBackendId, pfl->forknum);
-#if CFS_SUPPORT
-				pfl->is_cfs_compressed = is_cfs
-					&& md_get_compressor_internal(pfl->relnode, InvalidBackendId, pfl->forknum) != 0;
-#endif
 
 				*filelist = lappend(*filelist, pfl);
 
@@ -409,10 +394,7 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 	ListCell   *cell;
 	char	   *fullpath;
 	struct stat fst;
-	off_t       rel_st_size = 0;
-#if CFS_SUPPORT
-	RelFileNodeBackend rnodebackend;
-#endif
+	uint32_t	rel_st_size = 0;
 
 get_next:
 
@@ -420,12 +402,21 @@ get_next:
 	if (list_length(ctx->filelist) == 0)
 		return -1;
 
+#ifdef foreach_current_index
+	/* Get first file from the head */
+	cell = list_tail(ctx->filelist);
+	pfl = (PtrackFileList_i *) lfirst(cell);
+
+	/* Remove this file from the list */
+	ctx->filelist = list_delete_last(ctx->filelist);
+#else
 	/* Get first file from the head */
 	cell = list_head(ctx->filelist);
 	pfl = (PtrackFileList_i *) lfirst(cell);
 
 	/* Remove this file from the list */
 	ctx->filelist = list_delete_first(ctx->filelist);
+#endif
 
 	if (pfl->segno > 0)
 	{
@@ -453,27 +444,15 @@ get_next:
 		goto get_next;
 	}
 
-	if (fst.st_size == 0)
+	rel_st_size = fst.st_size;
+
+	if (rel_st_size == 0)
 	{
 		elog(DEBUG3, "ptrack: skip empty file %s", fullpath);
 
 		/* But try the next one */
 		goto get_next;
 	}
-
-#if CFS_SUPPORT
-	nodeOf(rnodebackend) = ctx->bid.relnode;
-	rnodebackend.backend = InvalidBackendId;
-
-	if(pfl->is_cfs_compressed) {
-		rel_st_size = get_cfs_relation_file_decompressed_size(rnodebackend, fullpath, pfl->forknum);
-
-		// Could not open fullpath for some reason, trying the next file.
-		if(rel_st_size == -1)
-			goto get_next;
-	} else
-#endif
-	rel_st_size = fst.st_size;
 
 	if (pfl->segno > 0)
 	{
@@ -643,10 +622,12 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 
 		update_lsn1 = pg_atomic_read_u64(&ptrack_map->entries[slot1]);
 
+#if USE_ASSERT_CHECKING
 		if (update_lsn1 != InvalidXLogRecPtr)
 			elog(DEBUG3, "ptrack: update_lsn1 %X/%X of blckno %u of file %s",
 				 (uint32) (update_lsn1 >> 32), (uint32) update_lsn1,
 				 ctx->bid.blocknum, ctx->relpath);
+#endif
 
 		/* Only probe the second slot if the first one is marked */
 		if (update_lsn1 >= ctx->lsn)
@@ -654,10 +635,12 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 			slot2 = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
 			update_lsn2 = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
 
+#if USE_ASSERT_CHECKING
 			if (update_lsn2 != InvalidXLogRecPtr)
 				elog(DEBUG3, "ptrack: update_lsn2 %X/%X of blckno %u of file %s",
 					 (uint32) (update_lsn1 >> 32), (uint32) update_lsn2,
 					 ctx->bid.blocknum, ctx->relpath);
+#endif
 
 			/* Block has been changed since specified LSN.  Mark it in the bitmap */
 			if (update_lsn2 >= ctx->lsn)

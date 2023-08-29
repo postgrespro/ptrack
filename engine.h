@@ -44,11 +44,6 @@
 #define PTRACK_MAGIC "ptk"
 #define PTRACK_MAGIC_SIZE 4
 
-/* CFS support macro */
-#if defined(PGPRO_EE) && PG_VERSION_NUM >= 110000
-#define CFS_SUPPORT 1
-#endif
-
 /*
  * Header of ptrack map.
  */
@@ -115,11 +110,5 @@ extern void assign_ptrack_map_size(int newval, void *extra);
 extern void ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid);
 extern void ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 							  ForkNumber forkno, BlockNumber blkno);
-
-extern bool is_cfm_file_path(const char *path);
-#ifdef PGPRO_EE
-extern off_t    get_cfs_relation_file_decompressed_size(RelFileNodeBackend rnode,
-					const char *fullpath, ForkNumber forknum);
-#endif
 
 #endif							/* PTRACK_ENGINE_H */
