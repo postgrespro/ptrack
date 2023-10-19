@@ -102,13 +102,13 @@ postgres=# SELECT * FROM ptrack_get_change_stat('0/285C8C8');
 
 ## Upgrading
 
-Usually, you have to only install new version of `ptrack` and do `ALTER EXTENSION 'ptrack' UPDATE;`. However, some specific actions may be required as well:
+Usually, you have to only install new version of `ptrack` and do `ALTER EXTENSION ptrack UPDATE;`. However, some specific actions may be required as well:
 
 #### Upgrading from 2.0.0 to 2.1.*:
 
 * Put `shared_preload_libraries = 'ptrack'` into `postgresql.conf`.
 * Rename `ptrack_map_size` to `ptrack.map_size`.
-* Do `ALTER EXTENSION 'ptrack' UPDATE;`.
+* Do `ALTER EXTENSION ptrack UPDATE;`.
 * Restart your server.
 
 #### Upgrading from 2.1.* to 2.2.*:
@@ -121,14 +121,14 @@ Since version 2.2 we use a different algorithm for tracking changed pages. Thus,
 * Update ptrack binaries
 * Remove global/ptrack.map.mmap if it exist in server data directory
 * Start server
-* Do `ALTER EXTENSION 'ptrack' UPDATE;`.
+* Do `ALTER EXTENSION ptrack UPDATE;`.
 
 #### Upgrading from 2.3.* to 2.4.*:
 
 * Stop your server
 * Update ptrack binaries
 * Start server
-* Do `ALTER EXTENSION 'ptrack' UPDATE;`.
+* Do `ALTER EXTENSION ptrack UPDATE;`.
 
 ## Limitations
 
