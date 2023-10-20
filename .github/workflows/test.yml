@@ -1,0 +1,94 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+jobs:
+  Test:
+    strategy:
+      matrix:
+        # pg_version: [15]
+        pg_version: [11, 12, 13, 14, 15]
+        os: [ubuntu-22.04]
+        # tests: [tap]
+        tests: [tap, python]
+        # test_mode: [normal, legacy, paranoia]
+        test_mode: [normal, paranoia]
+        exclude:
+          - tests: tap
+            test_mode: paranoia
+          - tests: python
+            test_mode: normal
+          - tests: python
+            test_mode: legacy
+      fail-fast: false
+    name: ${{ format('Ptrack ({0}, PostgreSQL {1}, {2} tests, {3} mode)', matrix.os, matrix.pg_version, matrix.tests, matrix.test_mode) }}
+    container:
+      image: ${{ format('ghcr.io/postgres-dev/{0}:1.0', matrix.os) }}
+      env:
+        PG_BRANCH: ${{ format('REL_{0}_STABLE', matrix.pg_version) }}
+        PGDATA: $HOME/data
+        TEST_MODE: ${{ matrix.test_mode }}
+      options: --privileged
+    steps:
+      - name: Get Postgres sources
+        uses: actions/checkout@v3
+        with:
+          repository: postgres/postgres
+          ref: ${{ format('REL_{0}_STABLE', matrix.pg_version) }}
+          path: postgres
+      - name: Get Ptrack sources
+        uses: actions/checkout@v3
+        with:
+          path: ptrack
+      - name: Get Pg_probackup sources
+        uses: actions/checkout@v3
+        with:
+          repository: postgrespro/pg_probackup
+          path: pg_probackup
+      - name: Apply ptrack patches
+        run: make patch top_builddir=../postgres
+        working-directory: ptrack
+      - name: Install Postgres
+        run: |
+          make install-postgres top_builddir=$GITHUB_WORKSPACE/postgres prefix=$HOME/pgsql &&
+          echo $HOME/pgsql/bin >> $GITHUB_PATH
+        working-directory: ptrack
+      - name: Install Ptrack
+        run: make install USE_PGXS=1 PG_CPPFLAGS=-coverage SHLIB_LINK=-coverage
+        working-directory: ptrack
+      - name: Install Pg_probackup
+        run: make install-pg-probackup USE_PGXS=1 top_srcdir=../postgres
+        working-directory: ptrack
+        shell: bash {0}
+      - name: Install additional packages
+        run: |
+          apt update &&
+          apt install -y python3-pip python3-six python3-pytest python3-pytest-xdist curl &&
+          pip3 install --no-input testgres
+      # All steps have been so far executed by root but ptrack tests run from an
+      # unprivileged user so change some permissions
+      - name: Adjust the permissions of ptrack test folders
+        run: |
+          mkdir pg_probackup/tests/tmp_dirs
+          chown -R "dev:" pg_probackup ptrack
+      - name: Test
+        run: make test-${{ matrix.tests }} USE_PGXS=1
+        working-directory: ptrack
+        shell: runuser dev {0}
+      - name: Collect coverage results
+        run: make coverage
+        working-directory: ptrack
+        shell: runuser dev {0}
+      - name: Upload coverage results to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          working-directory: ptrack
+    runs-on: ubuntu-latest

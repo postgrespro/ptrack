@@ -1,6 +1,9 @@
 codecov:
   notify:
-    after_n_builds: 12 # keep in sync with .travis.yml number of builds
+    # must be equal to the total number of parallel jobs in a CI pipeline
+    # (Postgres versions x test types x test modes x OSes minus excluded
+    # combinations)
+    after_n_builds: 10
 
 # datapagemap.c/.h are copied from Postgres, so let's remove it
 # from report.  Otherwise, we would have to remove some currently
