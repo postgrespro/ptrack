@@ -22,6 +22,7 @@ ifdef USE_PGXS
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 include $(PGXS)
 else
+subdir = contrib/ptrack
 top_builddir = ../..
 # Makefile.global is a build artifact and initially may not be available
 ifneq ($(wildcard $(top_builddir)/src/Makefile.global), )
