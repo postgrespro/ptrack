@@ -330,25 +330,38 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 			/* Regular file inside database directory, otherwise skip it */
 			if (dbOid != InvalidOid || spcOid == GLOBALTABLESPACE_OID)
 			{
+#if PG_VERSION_NUM >= 170000
+				RelFileNumber relNumber;
+				unsigned	segno;
+#else
 				int			oidchars;
 				char		oidbuf[OIDCHARS + 1];
+#endif
 				char	   *segpath;
 				PtrackFileList_i *pfl = palloc0(sizeof(PtrackFileList_i));
 
 				/*
 				 * Check that filename seems to be a regular relation file.
 				 */
+#if PG_VERSION_NUM >= 170000
+				if (!parse_filename_for_nontemp_relation(de->d_name, &relNumber, &pfl->forknum, &segno))
+					continue;
+#else
 				if (!parse_filename_for_nontemp_relation(de->d_name, &oidchars, &pfl->forknum))
 					continue;
-
+#endif
 				/* Parse segno */
 				segpath = strstr(de->d_name, ".");
 				pfl->segno = segpath != NULL ? atoi(segpath + 1) : 0;
 
 				/* Fill the pfl in */
+#if PG_VERSION_NUM >= 170000
+				nodeRel(pfl->relnode) = relNumber;
+#else
 				memcpy(oidbuf, de->d_name, oidchars);
 				oidbuf[oidchars] = '\0';
 				nodeRel(pfl->relnode) = atooid(oidbuf);
+#endif
 				nodeDb(pfl->relnode) = dbOid;
 				nodeSpc(pfl->relnode) = spcOid == InvalidOid ? DEFAULTTABLESPACE_OID : spcOid;
 				pfl->path = GetRelationPath(dbOid, nodeSpc(pfl->relnode),

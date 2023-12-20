@@ -506,8 +506,13 @@ ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 	BlockNumber blkno,
 				nblocks = 0;
 	struct stat stat_buf;
+#if PG_VERSION_NUM >= 170000
+	RelFileNumber relNumber;
+	unsigned	segno;
+#else
 	int			oidchars;
 	char		oidbuf[OIDCHARS + 1];
+#endif
 
 	/* Do not track temporary relations */
 	if (looks_like_temp_rel_name(filename))
@@ -519,12 +524,19 @@ ptrack_mark_file(Oid dbOid, Oid tablespaceOid,
 	nodeDb(nodeOf(rnode)) = dbOid;
 	nodeSpc(nodeOf(rnode)) = tablespaceOid;
 
+#if PG_VERSION_NUM >= 170000
+	if (!parse_filename_for_nontemp_relation(filename, &relNumber, &forknum, &segno))
+		return;
+
+	nodeRel(nodeOf(rnode)) = relNumber;
+#else
 	if (!parse_filename_for_nontemp_relation(filename, &oidchars, &forknum))
 		return;
 
 	memcpy(oidbuf, filename, oidchars);
 	oidbuf[oidchars] = '\0';
 	nodeRel(nodeOf(rnode)) = atooid(oidbuf);
+#endif
 
 	/* Compute number of blocks based on file size */
 	if (stat(filepath, &stat_buf) == 0)
