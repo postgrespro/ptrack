@@ -407,7 +407,7 @@ ptrack_filelist_getnext(PtScanCtx * ctx)
 	ListCell   *cell;
 	char	   *fullpath;
 	struct stat fst;
-	uint32_t	rel_st_size = 0;
+	uint32		rel_st_size = 0;
 
 get_next:
 
