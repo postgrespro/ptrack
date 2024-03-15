@@ -1,8 +1,8 @@
 diff --git a/src/backend/backup/basebackup.c b/src/backend/backup/basebackup.c
-index 45be21131c5..134e677f9d1 100644
+index 5fbbe5ffd20..3c9b99f851d 100644
 --- a/src/backend/backup/basebackup.c
 +++ b/src/backend/backup/basebackup.c
-@@ -199,6 +199,13 @@ static const struct exclude_list_item excludeFiles[] =
+@@ -220,6 +220,13 @@ static const struct exclude_list_item excludeFiles[] =
  	{"postmaster.pid", false},
  	{"postmaster.opts", false},
  
@@ -16,20 +16,8 @@ index 45be21131c5..134e677f9d1 100644
  	/* end of list */
  	{NULL, false}
  };
-@@ -214,6 +221,11 @@ static const struct exclude_list_item noChecksumFiles[] = {
- 	{"pg_filenode.map", false},
- 	{"pg_internal.init", true},
- 	{"PG_VERSION", false},
-+
-+	{"ptrack.map.mmap", false},
-+	{"ptrack.map", false},
-+	{"ptrack.map.tmp", false},
-+
- #ifdef EXEC_BACKEND
- 	{"config_exec_params", true},
- #endif
 diff --git a/src/backend/storage/file/copydir.c b/src/backend/storage/file/copydir.c
-index e04bc3941ae..996b5de6169 100644
+index d4fbe542077..b108416c708 100644
 --- a/src/backend/storage/file/copydir.c
 +++ b/src/backend/storage/file/copydir.c
 @@ -27,6 +27,8 @@
@@ -52,10 +40,10 @@ index e04bc3941ae..996b5de6169 100644
  	 * Be paranoid here and fsync all files to ensure the copy is really done.
  	 * But if fsync is disabled, we're done.
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
-index fdecbad1709..f849d00161e 100644
+index bf0f3ca76d1..7d9833a3604 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
-@@ -87,6 +87,8 @@ typedef struct _MdfdVec
+@@ -85,6 +85,8 @@ typedef struct _MdfdVec
  
  static MemoryContext MdCxt;		/* context for all MdfdVec objects */
  
@@ -64,7 +52,7 @@ index fdecbad1709..f849d00161e 100644
  
  /* Populate a file tag describing an md.c segment file. */
  #define INIT_MD_FILETAG(a,xx_rlocator,xx_forknum,xx_segno) \
-@@ -515,6 +517,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+@@ -513,6 +515,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  		register_dirty_segment(reln, forknum, v);
  
  	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
@@ -74,7 +62,7 @@ index fdecbad1709..f849d00161e 100644
  }
  
  /*
-@@ -622,6 +627,12 @@ mdzeroextend(SMgrRelation reln, ForkNumber forknum,
+@@ -620,6 +625,12 @@ mdzeroextend(SMgrRelation reln, ForkNumber forknum,
  
  		remblocks -= numblocks;
  		curblocknum += numblocks;
@@ -87,21 +75,27 @@ index fdecbad1709..f849d00161e 100644
  	}
  }
  
-@@ -867,6 +878,9 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+@@ -1015,7 +1026,14 @@ mdwritev(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  
- 	if (!skipFsync && !SmgrIsTemp(reln))
- 		register_dirty_segment(reln, forknum, v);
+ 		nblocks -= nblocks_this_segment;
+ 		buffers += nblocks_this_segment;
+-		blocknum += nblocks_this_segment;
 +
-+	if (mdwrite_hook)
-+		mdwrite_hook(reln->smgr_rlocator, forknum, blocknum);
++		if (mdwrite_hook)
++		{
++			for (; nblocks_this_segment--; blocknum++)
++				mdwrite_hook(reln->smgr_rlocator, forknum, blocknum);
++		}
++		else
++			blocknum += nblocks_this_segment;
+ 	}
  }
  
- /*
 diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
-index 04fcb06056d..22bf179f560 100644
+index ab7137d0fff..bc40a763c05 100644
 --- a/src/backend/storage/sync/sync.c
 +++ b/src/backend/storage/sync/sync.c
-@@ -79,6 +79,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
+@@ -74,6 +74,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
  static CycleCtr sync_cycle_ctr = 0;
  static CycleCtr checkpoint_cycle_ctr = 0;
  
@@ -110,7 +104,7 @@ index 04fcb06056d..22bf179f560 100644
  /* Intervals for calling AbsorbSyncRequests */
  #define FSYNCS_PER_ABSORB		10
  #define UNLINKS_PER_ABSORB		10
-@@ -475,6 +477,9 @@ ProcessSyncRequests(void)
+@@ -470,6 +472,9 @@ ProcessSyncRequests(void)
  	CheckpointStats.ckpt_longest_sync = longest;
  	CheckpointStats.ckpt_agg_sync_time = total_elapsed;
  
@@ -121,10 +115,10 @@ index 04fcb06056d..22bf179f560 100644
  	sync_in_progress = false;
  }
 diff --git a/src/bin/pg_checksums/pg_checksums.c b/src/bin/pg_checksums/pg_checksums.c
-index 19eb67e4854..008a7acc9f0 100644
+index 9e6fd435f60..f2180b9f6de 100644
 --- a/src/bin/pg_checksums/pg_checksums.c
 +++ b/src/bin/pg_checksums/pg_checksums.c
-@@ -118,6 +118,11 @@ static const struct exclude_list_item skip[] = {
+@@ -110,6 +110,11 @@ static const struct exclude_list_item skip[] = {
  	{"pg_filenode.map", false},
  	{"pg_internal.init", true},
  	{"PG_VERSION", false},
@@ -137,27 +131,27 @@ index 19eb67e4854..008a7acc9f0 100644
  	{"config_exec_params", true},
  #endif
 diff --git a/src/bin/pg_resetwal/pg_resetwal.c b/src/bin/pg_resetwal/pg_resetwal.c
-index e7ef2b8bd0c..ca7f8cdbc2f 100644
+index e9dcb5a6d89..844b04d5e12 100644
 --- a/src/bin/pg_resetwal/pg_resetwal.c
 +++ b/src/bin/pg_resetwal/pg_resetwal.c
-@@ -85,6 +85,7 @@ static void RewriteControlFile(void);
- static void FindEndOfXLOG(void);
+@@ -86,6 +86,7 @@ static void FindEndOfXLOG(void);
  static void KillExistingXLOG(void);
  static void KillExistingArchiveStatus(void);
+ static void KillExistingWALSummaries(void);
 +static void KillExistingPtrack(void);
  static void WriteEmptyXLOG(void);
  static void usage(void);
  
-@@ -488,6 +489,7 @@ main(int argc, char *argv[])
- 	RewriteControlFile();
+@@ -495,6 +496,7 @@ main(int argc, char *argv[])
  	KillExistingXLOG();
  	KillExistingArchiveStatus();
+ 	KillExistingWALSummaries();
 +	KillExistingPtrack();
  	WriteEmptyXLOG();
  
  	printf(_("Write-ahead log reset\n"));
-@@ -1029,6 +1031,41 @@ KillExistingArchiveStatus(void)
- 		pg_fatal("could not close directory \"%s\": %m", ARCHSTATDIR);
+@@ -998,6 +1000,41 @@ KillExistingXLOG(void)
+ 		pg_fatal("could not close directory \"%s\": %m", XLOGDIR);
  }
  
 +/*
@@ -197,9 +191,9 @@ index e7ef2b8bd0c..ca7f8cdbc2f 100644
 +
  
  /*
-  * Write an empty XLOG file, containing only the checkpoint record
+  * Remove existing archive status files
 diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
-index bd5c598e200..a568156c5fb 100644
+index 255ddf2ffaf..1142c244926 100644
 --- a/src/bin/pg_rewind/filemap.c
 +++ b/src/bin/pg_rewind/filemap.c
 @@ -157,6 +157,10 @@ static const struct exclude_list_item excludeFiles[] =
@@ -214,7 +208,7 @@ index bd5c598e200..a568156c5fb 100644
  	{NULL, false}
  };
 diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
-index a8be5b21e0b..020874f96cd 100644
+index a25e258f479..b20b9c76e8d 100644
 --- a/src/include/storage/copydir.h
 +++ b/src/include/storage/copydir.h
 @@ -13,6 +13,9 @@
@@ -228,7 +222,7 @@ index a8be5b21e0b..020874f96cd 100644
  extern void copy_file(const char *fromfile, const char *tofile);
  
 diff --git a/src/include/storage/md.h b/src/include/storage/md.h
-index 941879ee6a8..24738aeecd0 100644
+index 620f10abdeb..b36936871bd 100644
 --- a/src/include/storage/md.h
 +++ b/src/include/storage/md.h
 @@ -19,6 +19,13 @@
@@ -246,11 +240,11 @@ index 941879ee6a8..24738aeecd0 100644
  extern void mdinit(void);
  extern void mdopen(SMgrRelation reln);
 diff --git a/src/include/storage/sync.h b/src/include/storage/sync.h
-index cfbcfa6797d..2a432440db9 100644
+index 9dee8fa6e5b..348ed53e4e2 100644
 --- a/src/include/storage/sync.h
 +++ b/src/include/storage/sync.h
 @@ -55,6 +55,9 @@ typedef struct FileTag
- 	uint32		segno;
+ 	uint64		segno;
  } FileTag;
  
 +typedef void (*ProcessSyncRequests_hook_type) (void);
