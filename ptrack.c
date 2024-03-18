@@ -66,7 +66,6 @@ static mdextend_hook_type prev_mdextend_hook = NULL;
 static ProcessSyncRequests_hook_type prev_ProcessSyncRequests_hook = NULL;
 
 void		_PG_init(void);
-void		_PG_fini(void);
 
 static void ptrack_shmem_startup_hook(void);
 static void ptrack_copydir_hook(const char *path);
@@ -154,20 +153,6 @@ ptrack_shmem_request(void)
 	RequestAddinShmemSpace(PtrackActualSize);
 }
 #endif
-
-/*
- * Module unload callback
- */
-void
-_PG_fini(void)
-{
-	/* Uninstall hooks */
-	shmem_startup_hook = prev_shmem_startup_hook;
-	copydir_hook = prev_copydir_hook;
-	mdwrite_hook = prev_mdwrite_hook;
-	mdextend_hook = prev_mdextend_hook;
-	ProcessSyncRequests_hook = prev_ProcessSyncRequests_hook;
-}
 
 /*
  * ptrack_shmem_startup hook: allocate or attach to shared memory.
