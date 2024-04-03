@@ -47,6 +47,10 @@
 #define nodeOf(ndbck)		(ndbck).node
 #endif
 
+#if PG_VERSION_NUM >= 170000
+#define InvalidBackendId	INVALID_PROC_NUMBER
+#endif
+
 /*
  * Structure identifying block on the disk.
  */
