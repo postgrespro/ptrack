@@ -104,6 +104,7 @@ extern int	ptrack_map_size_tmp;
 extern void ptrackCheckpoint(void);
 extern void ptrackMapInit(void);
 extern void ptrackCleanFiles(void);
+extern XLogRecPtr ptrack_set_init_lsn(void);
 
 extern void assign_ptrack_map_size(int newval, void *extra);
 

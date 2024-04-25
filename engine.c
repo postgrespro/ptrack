@@ -643,19 +643,7 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 	slots[0] = (size_t)(hash % PtrackContentNblocks);
 	slots[1] = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
 
-	if (RecoveryInProgress())
-		new_lsn = GetXLogReplayRecPtr(NULL);
-	else
-		new_lsn = GetXLogInsertRecPtr();
-
-	/* Atomically assign new init LSN value */
-	if (pg_atomic_read_u64(&ptrack_map->init_lsn) == InvalidXLogRecPtr)
-	{
-#if USE_ASSERT_CHECKING
-		elog(DEBUG3, "ptrack_mark_block: init_lsn");
-#endif
-		ptrack_atomic_increase(new_lsn, &ptrack_map->init_lsn);
-	}
+	new_lsn = ptrack_set_init_lsn();
 
 	/* Atomically assign new LSN value to the slots */
 	for (i = 0; i < lengthof(slots); i++)
@@ -665,4 +653,23 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 #endif
 		ptrack_atomic_increase(new_lsn, &ptrack_map->entries[slots[i]]);
 	}
+}
+
+extern XLogRecPtr ptrack_set_init_lsn(void)
+{
+	XLogRecPtr new_lsn;
+	if (RecoveryInProgress())
+		new_lsn = GetXLogReplayRecPtr(NULL);
+	else
+		new_lsn = GetXLogInsertRecPtr();
+
+	/* Atomically assign new init LSN value */
+	if (pg_atomic_read_u64(&ptrack_map->init_lsn) == InvalidXLogRecPtr)
+	{
+#if USE_ASSERT_CHECKING
+		elog(DEBUG3, "ptrack_set_init_lsn: init_lsn");
+#endif
+		ptrack_atomic_increase(new_lsn, &ptrack_map->init_lsn);
+	}
+	return new_lsn;
 }

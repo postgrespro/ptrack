@@ -64,6 +64,9 @@ static copydir_hook_type prev_copydir_hook = NULL;
 static mdwrite_hook_type prev_mdwrite_hook = NULL;
 static mdextend_hook_type prev_mdextend_hook = NULL;
 static ProcessSyncRequests_hook_type prev_ProcessSyncRequests_hook = NULL;
+#if PG_VERSION_NUM >= 170000
+static backup_checkpoint_request_hook_type prev_backup_checkpoint_request_hook = NULL;
+#endif
 
 void		_PG_init(void);
 
@@ -74,6 +77,9 @@ static void ptrack_mdwrite_hook(RelFileNodeBackend smgr_rnode,
 static void ptrack_mdextend_hook(RelFileNodeBackend smgr_rnode,
 								 ForkNumber forkno, BlockNumber blkno);
 static void ptrack_ProcessSyncRequests_hook(void);
+#if PG_VERSION_NUM >= 170000
+static void ptrack_backup_checkpoint_request_hook(void);
+#endif
 
 static void ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid);
 static int	ptrack_filelist_getnext(PtScanCtx * ctx);
@@ -141,6 +147,10 @@ _PG_init(void)
 	mdextend_hook = ptrack_mdextend_hook;
 	prev_ProcessSyncRequests_hook = ProcessSyncRequests_hook;
 	ProcessSyncRequests_hook = ptrack_ProcessSyncRequests_hook;
+#if PG_VERSION_NUM >= 170000
+	prev_backup_checkpoint_request_hook = backup_checkpoint_request_hook;
+	backup_checkpoint_request_hook = ptrack_backup_checkpoint_request_hook;
+#endif
 }
 
 #if PG_VERSION_NUM >= 150000
@@ -267,6 +277,16 @@ ptrack_ProcessSyncRequests_hook()
 		prev_ProcessSyncRequests_hook();
 }
 
+#if PG_VERSION_NUM >= 170000
+static void
+ptrack_backup_checkpoint_request_hook(void)
+{
+	ptrack_set_init_lsn();
+
+	if (prev_backup_checkpoint_request_hook)
+		prev_backup_checkpoint_request_hook();
+}
+#endif
 /*
  * Recursively walk through the path and add all data files to filelist.
  */

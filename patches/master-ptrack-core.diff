@@ -1,5 +1,30 @@
+diff --git a/src/backend/access/transam/xlog.c b/src/backend/access/transam/xlog.c
+index 34a2c71812..2d73d8023e 100644
+--- a/src/backend/access/transam/xlog.c
++++ b/src/backend/access/transam/xlog.c
+@@ -135,6 +135,7 @@ int			wal_retrieve_retry_interval = 5000;
+ int			max_slot_wal_keep_size_mb = -1;
+ int			wal_decode_buffer_size = 512 * 1024;
+ bool		track_wal_io_timing = false;
++backup_checkpoint_request_hook_type backup_checkpoint_request_hook = NULL;
+ 
+ #ifdef WAL_DEBUG
+ bool		XLOG_DEBUG = false;
+@@ -8801,6 +8802,12 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
+ 		{
+ 			bool		checkpointfpw;
+ 
++			/*
++			 * Before we call RequestCheckpoint() we need to set
++			 * init_lsn for ptrack map
++			 */
++			if (backup_checkpoint_request_hook)
++				backup_checkpoint_request_hook();
+ 			/*
+ 			 * Force a CHECKPOINT.  Aside from being necessary to prevent torn
+ 			 * page problems, this guarantees that two successive backup runs
 diff --git a/src/backend/backup/basebackup.c b/src/backend/backup/basebackup.c
-index 5fbbe5ffd20..3c9b99f851d 100644
+index 9a2bf59e84..ade9115651 100644
 --- a/src/backend/backup/basebackup.c
 +++ b/src/backend/backup/basebackup.c
 @@ -220,6 +220,13 @@ static const struct exclude_list_item excludeFiles[] =
@@ -17,7 +42,7 @@ index 5fbbe5ffd20..3c9b99f851d 100644
  	{NULL, false}
  };
 diff --git a/src/backend/storage/file/copydir.c b/src/backend/storage/file/copydir.c
-index d4fbe542077..b108416c708 100644
+index d4fbe54207..b108416c70 100644
 --- a/src/backend/storage/file/copydir.c
 +++ b/src/backend/storage/file/copydir.c
 @@ -27,6 +27,8 @@
@@ -40,7 +65,7 @@ index d4fbe542077..b108416c708 100644
  	 * Be paranoid here and fsync all files to ensure the copy is really done.
  	 * But if fsync is disabled, we're done.
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
-index bf0f3ca76d1..7d9833a3604 100644
+index bf0f3ca76d..7d9833a360 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
 @@ -85,6 +85,8 @@ typedef struct _MdfdVec
@@ -92,7 +117,7 @@ index bf0f3ca76d1..7d9833a3604 100644
  }
  
 diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
-index ab7137d0fff..bc40a763c05 100644
+index ab7137d0ff..bc40a763c0 100644
 --- a/src/backend/storage/sync/sync.c
 +++ b/src/backend/storage/sync/sync.c
 @@ -74,6 +74,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
@@ -115,7 +140,7 @@ index ab7137d0fff..bc40a763c05 100644
  	sync_in_progress = false;
  }
 diff --git a/src/bin/pg_checksums/pg_checksums.c b/src/bin/pg_checksums/pg_checksums.c
-index 9e6fd435f60..f2180b9f6de 100644
+index 9e6fd435f6..f2180b9f6d 100644
 --- a/src/bin/pg_checksums/pg_checksums.c
 +++ b/src/bin/pg_checksums/pg_checksums.c
 @@ -110,6 +110,11 @@ static const struct exclude_list_item skip[] = {
@@ -131,7 +156,7 @@ index 9e6fd435f60..f2180b9f6de 100644
  	{"config_exec_params", true},
  #endif
 diff --git a/src/bin/pg_resetwal/pg_resetwal.c b/src/bin/pg_resetwal/pg_resetwal.c
-index e9dcb5a6d89..844b04d5e12 100644
+index e9dcb5a6d8..844b04d5e1 100644
 --- a/src/bin/pg_resetwal/pg_resetwal.c
 +++ b/src/bin/pg_resetwal/pg_resetwal.c
 @@ -86,6 +86,7 @@ static void FindEndOfXLOG(void);
@@ -193,10 +218,10 @@ index e9dcb5a6d89..844b04d5e12 100644
  /*
   * Remove existing archive status files
 diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
-index 255ddf2ffaf..1142c244926 100644
+index 4458324c9d..7d857467f7 100644
 --- a/src/bin/pg_rewind/filemap.c
 +++ b/src/bin/pg_rewind/filemap.c
-@@ -157,6 +157,10 @@ static const struct exclude_list_item excludeFiles[] =
+@@ -156,6 +156,10 @@ static const struct exclude_list_item excludeFiles[] =
  	{"postmaster.pid", false},
  	{"postmaster.opts", false},
  
@@ -207,8 +232,22 @@ index 255ddf2ffaf..1142c244926 100644
  	/* end of list */
  	{NULL, false}
  };
+diff --git a/src/include/access/xlog.h b/src/include/access/xlog.h
+index 76787a8267..2c662f4022 100644
+--- a/src/include/access/xlog.h
++++ b/src/include/access/xlog.h
+@@ -57,6 +57,9 @@ extern PGDLLIMPORT int wal_decode_buffer_size;
+ 
+ extern PGDLLIMPORT int CheckPointSegments;
+ 
++typedef void (*backup_checkpoint_request_hook_type) (void);
++extern PGDLLIMPORT backup_checkpoint_request_hook_type backup_checkpoint_request_hook;
++
+ /* Archive modes */
+ typedef enum ArchiveMode
+ {
 diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
-index a25e258f479..b20b9c76e8d 100644
+index a25e258f47..b20b9c76e8 100644
 --- a/src/include/storage/copydir.h
 +++ b/src/include/storage/copydir.h
 @@ -13,6 +13,9 @@
@@ -222,7 +261,7 @@ index a25e258f479..b20b9c76e8d 100644
  extern void copy_file(const char *fromfile, const char *tofile);
  
 diff --git a/src/include/storage/md.h b/src/include/storage/md.h
-index 620f10abdeb..b36936871bd 100644
+index 620f10abde..b36936871b 100644
 --- a/src/include/storage/md.h
 +++ b/src/include/storage/md.h
 @@ -19,6 +19,13 @@
@@ -240,7 +279,7 @@ index 620f10abdeb..b36936871bd 100644
  extern void mdinit(void);
  extern void mdopen(SMgrRelation reln);
 diff --git a/src/include/storage/sync.h b/src/include/storage/sync.h
-index 9dee8fa6e5b..348ed53e4e2 100644
+index 9dee8fa6e5..348ed53e4e 100644
 --- a/src/include/storage/sync.h
 +++ b/src/include/storage/sync.h
 @@ -55,6 +55,9 @@ typedef struct FileTag
