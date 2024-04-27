@@ -655,7 +655,8 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 	}
 }
 
-extern XLogRecPtr ptrack_set_init_lsn(void)
+XLogRecPtr
+ptrack_set_init_lsn(void)
 {
 	XLogRecPtr new_lsn;
 	if (RecoveryInProgress())
