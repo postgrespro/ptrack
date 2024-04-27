@@ -599,6 +599,23 @@ ptrack_walkdir(const char *path, Oid tablespaceOid, Oid dbOid)
 	FreeDir(dir);				/* we ignore any error here */
 }
 
+static void
+ptrack_atomic_increase(XLogRecPtr new_lsn, pg_atomic_uint64 *var)
+{
+	/*
+	 * We use pg_atomic_uint64 here only for alignment purposes, because
+	 * pg_atomic_uint64 is forcedly aligned on 8 bytes during the MSVC build.
+	 */
+	pg_atomic_uint64	old_lsn;
+
+	old_lsn.value = pg_atomic_read_u64(var);
+#if USE_ASSERT_CHECKING
+	elog(DEBUG3, "ptrack_mark_block: " UINT64_FORMAT " <- " UINT64_FORMAT, old_lsn.value, new_lsn);
+#endif
+	while (old_lsn.value < new_lsn &&
+		   !pg_atomic_compare_exchange_u64(var, (uint64 *) &old_lsn.value, new_lsn));
+}
+
 /*
  * Mark modified block in ptrack_map.
  */
@@ -608,15 +625,9 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 {
 	PtBlockId	bid;
 	uint64		hash;
-	size_t		slot1;
-	size_t		slot2;
+	size_t		slots[2];
 	XLogRecPtr	new_lsn;
-	/*
-	 * We use pg_atomic_uint64 here only for alignment purposes, because
-	 * pg_atomic_uint64 is forcedly aligned on 8 bytes during the MSVC build.
-	 */
-	pg_atomic_uint64	old_lsn;
-	pg_atomic_uint64	old_init_lsn;
+	int			i;
 
 	if (ptrack_map_size == 0
 		|| ptrack_map == NULL
@@ -629,8 +640,8 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 	bid.blocknum = blocknum;
 
 	hash = BID_HASH_FUNC(bid);
-	slot1 = (size_t)(hash % PtrackContentNblocks);
-	slot2 = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
+	slots[0] = (size_t)(hash % PtrackContentNblocks);
+	slots[1] = (size_t)(((hash << 32) | (hash >> 32)) % PtrackContentNblocks);
 
 	if (RecoveryInProgress())
 		new_lsn = GetXLogReplayRecPtr(NULL);
@@ -638,30 +649,20 @@ ptrack_mark_block(RelFileNodeBackend smgr_rnode,
 		new_lsn = GetXLogInsertRecPtr();
 
 	/* Atomically assign new init LSN value */
-	old_init_lsn.value = pg_atomic_read_u64(&ptrack_map->init_lsn);
-	if (old_init_lsn.value == InvalidXLogRecPtr)
+	if (pg_atomic_read_u64(&ptrack_map->init_lsn) == InvalidXLogRecPtr)
 	{
 #if USE_ASSERT_CHECKING
-		elog(DEBUG1, "ptrack_mark_block: init_lsn " UINT64_FORMAT " <- " UINT64_FORMAT, old_init_lsn.value, new_lsn);
+		elog(DEBUG3, "ptrack_mark_block: init_lsn");
 #endif
-
-		while (old_init_lsn.value < new_lsn &&
-			   !pg_atomic_compare_exchange_u64(&ptrack_map->init_lsn, (uint64 *) &old_init_lsn.value, new_lsn));
+		ptrack_atomic_increase(new_lsn, &ptrack_map->init_lsn);
 	}
 
-	/* Atomically assign new LSN value to the first slot */
-	old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[slot1]);
+	/* Atomically assign new LSN value to the slots */
+	for (i = 0; i < lengthof(slots); i++)
+	{
 #if USE_ASSERT_CHECKING
-	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, slot1, old_lsn.value, new_lsn);
+		elog(DEBUG3, "ptrack_mark_block: map[%zu]", slots[i]);
 #endif
-	while (old_lsn.value < new_lsn &&
-		   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[slot1], (uint64 *) &old_lsn.value, new_lsn));
-
-	/* And to the second */
-	old_lsn.value = pg_atomic_read_u64(&ptrack_map->entries[slot2]);
-#if USE_ASSERT_CHECKING
-	elog(DEBUG3, "ptrack_mark_block: map[%zu]=" UINT64_FORMAT " <- " UINT64_FORMAT, slot2, old_lsn.value, new_lsn);
-#endif
-	while (old_lsn.value < new_lsn &&
-		   !pg_atomic_compare_exchange_u64(&ptrack_map->entries[slot2], (uint64 *) &old_lsn.value, new_lsn));
+		ptrack_atomic_increase(new_lsn, &ptrack_map->entries[slots[i]]);
+	}
 }
