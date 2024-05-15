@@ -175,25 +175,24 @@ ptrack_shmem_startup_hook(void)
 	if (prev_shmem_startup_hook)
 		prev_shmem_startup_hook();
 
+	if (ptrack_map_size == 0)
+	{
+		ptrack_map = NULL;
+		return;
+	}
+
 	/*
 	 * Create or attach to the shared memory state
 	 */
 	LWLockAcquire(AddinShmemInitLock, LW_EXCLUSIVE);
 
-	if (ptrack_map_size != 0)
+	ptrack_map = ShmemInitStruct("ptrack map",
+								PtrackActualSize,
+								&map_found);
+	if (!map_found)
 	{
-		ptrack_map = ShmemInitStruct("ptrack map",
-									PtrackActualSize,
-									&map_found);
-		if (!map_found)
-		{
-			ptrackMapInit();
-			elog(DEBUG1, "Shared memory for ptrack is ready");
-		}
-	}
-	else
-	{
-		ptrack_map = NULL;
+		ptrackMapInit();
+		elog(DEBUG1, "Shared memory for ptrack is ready");
 	}
 
 	LWLockRelease(AddinShmemInitLock);
