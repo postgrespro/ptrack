@@ -1,5 +1,5 @@
 diff --git a/src/backend/backup/basebackup.c b/src/backend/backup/basebackup.c
-index 45be21131c5..134e677f9d1 100644
+index 52f0cd3be1..c08102514d 100644
 --- a/src/backend/backup/basebackup.c
 +++ b/src/backend/backup/basebackup.c
 @@ -199,6 +199,13 @@ static const struct exclude_list_item excludeFiles[] =
@@ -29,7 +29,7 @@ index 45be21131c5..134e677f9d1 100644
  	{"config_exec_params", true},
  #endif
 diff --git a/src/backend/storage/file/copydir.c b/src/backend/storage/file/copydir.c
-index e04bc3941ae..996b5de6169 100644
+index e04bc3941a..996b5de616 100644
 --- a/src/backend/storage/file/copydir.c
 +++ b/src/backend/storage/file/copydir.c
 @@ -27,6 +27,8 @@
@@ -52,7 +52,7 @@ index e04bc3941ae..996b5de6169 100644
  	 * Be paranoid here and fsync all files to ensure the copy is really done.
  	 * But if fsync is disabled, we're done.
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
-index fdecbad1709..f849d00161e 100644
+index fdecbad170..f849d00161 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
 @@ -87,6 +87,8 @@ typedef struct _MdfdVec
@@ -98,7 +98,7 @@ index fdecbad1709..f849d00161e 100644
  
  /*
 diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
-index 04fcb06056d..22bf179f560 100644
+index 04fcb06056..22bf179f56 100644
 --- a/src/backend/storage/sync/sync.c
 +++ b/src/backend/storage/sync/sync.c
 @@ -79,6 +79,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
@@ -120,8 +120,105 @@ index 04fcb06056d..22bf179f560 100644
  	/* Flag successful completion of ProcessSyncRequests */
  	sync_in_progress = false;
  }
+diff --git a/src/backend/utils/init/miscinit.c b/src/backend/utils/init/miscinit.c
+index b0ca61a8d6..c7dd3639ce 100644
+--- a/src/backend/utils/init/miscinit.c
++++ b/src/backend/utils/init/miscinit.c
+@@ -79,6 +79,11 @@ static Latch LocalLatchData;
+ 
+ bool		IgnoreSystemIndexes = false;
+ 
++/* ----------------------------------------------------------------
++ *				Ptrack functions support
++ * ----------------------------------------------------------------
++ */
++static void check_use_ptrack(const char *libraries);
+ 
+ /* ----------------------------------------------------------------
+  *	common process startup code
+@@ -1859,6 +1864,8 @@ process_shared_preload_libraries(void)
+ 				   false);
+ 	process_shared_preload_libraries_in_progress = false;
+ 	process_shared_preload_libraries_done = true;
++
++	check_use_ptrack(shared_preload_libraries_string);
+ }
+ 
+ /*
+@@ -1901,3 +1908,71 @@ pg_bindtextdomain(const char *domain)
+ 	}
+ #endif
+ }
++
++/*-------------------------------------------------------------------------
++ *				Ptrack functions support
++ *-------------------------------------------------------------------------
++ */
++
++/* Persistent copy of ptrack.map to restore after crash */
++#define PTRACK_PATH "global/ptrack.map"
++/* Used for atomical crash-safe update of ptrack.map */
++#define PTRACK_PATH_TMP "global/ptrack.map.tmp"
++
++/*
++ * Check that path is accessible by us and return true if it is
++ * not a directory.
++ */
++static bool
++ptrack_file_exists(const char *path)
++{
++	struct stat st;
++
++	Assert(path != NULL);
++
++	if (stat(path, &st) == 0)
++		return S_ISDIR(st.st_mode) ? false : true;
++	else if (!(errno == ENOENT || errno == ENOTDIR || errno == EACCES))
++		ereport(ERROR,
++				(errcode_for_file_access(),
++				 errmsg("could not access file \"%s\": %m", path)));
++
++	return false;
++}
++
++/*
++ * Delete ptrack files when ptrack is disabled.
++ *
++ * This is performed by postmaster at start,
++ * so that there are no concurrent delete issues.
++ */
++static void
++ptrackCleanFiles(void)
++{
++	char		ptrack_path[MAXPGPATH];
++	char		ptrack_path_tmp[MAXPGPATH];
++
++	sprintf(ptrack_path, "%s/%s", DataDir, PTRACK_PATH);
++	sprintf(ptrack_path_tmp, "%s/%s", DataDir, PTRACK_PATH_TMP);
++
++	elog(DEBUG1, "ptrack: clean map files");
++
++	if (ptrack_file_exists(ptrack_path_tmp))
++		durable_unlink(ptrack_path_tmp, LOG);
++
++	if (ptrack_file_exists(ptrack_path))
++		durable_unlink(ptrack_path, LOG);
++}
++
++static void
++check_use_ptrack(const char *libraries)
++{
++	/* We need to delete the ptrack.map file when ptrack was turned off */
++	if (strstr(shared_preload_libraries_string, "ptrack") == NULL)
++	{
++		ptrackCleanFiles();
++	}
++}
++
++#undef PTRACK_PATH
++#undef PTRACK_PATH_TMP
 diff --git a/src/bin/pg_checksums/pg_checksums.c b/src/bin/pg_checksums/pg_checksums.c
-index 19eb67e4854..008a7acc9f0 100644
+index 64b31d57d8..5d0afe0b27 100644
 --- a/src/bin/pg_checksums/pg_checksums.c
 +++ b/src/bin/pg_checksums/pg_checksums.c
 @@ -118,6 +118,11 @@ static const struct exclude_list_item skip[] = {
@@ -137,7 +234,7 @@ index 19eb67e4854..008a7acc9f0 100644
  	{"config_exec_params", true},
  #endif
 diff --git a/src/bin/pg_resetwal/pg_resetwal.c b/src/bin/pg_resetwal/pg_resetwal.c
-index e7ef2b8bd0c..ca7f8cdbc2f 100644
+index ca57713f63..499301a542 100644
 --- a/src/bin/pg_resetwal/pg_resetwal.c
 +++ b/src/bin/pg_resetwal/pg_resetwal.c
 @@ -85,6 +85,7 @@ static void RewriteControlFile(void);
@@ -199,7 +296,7 @@ index e7ef2b8bd0c..ca7f8cdbc2f 100644
  /*
   * Write an empty XLOG file, containing only the checkpoint record
 diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
-index bd5c598e200..a568156c5fb 100644
+index 435742d20d..cb518a5037 100644
 --- a/src/bin/pg_rewind/filemap.c
 +++ b/src/bin/pg_rewind/filemap.c
 @@ -157,6 +157,10 @@ static const struct exclude_list_item excludeFiles[] =
@@ -214,7 +311,7 @@ index bd5c598e200..a568156c5fb 100644
  	{NULL, false}
  };
 diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
-index a8be5b21e0b..020874f96cd 100644
+index a8be5b21e0..020874f96c 100644
 --- a/src/include/storage/copydir.h
 +++ b/src/include/storage/copydir.h
 @@ -13,6 +13,9 @@
@@ -228,7 +325,7 @@ index a8be5b21e0b..020874f96cd 100644
  extern void copy_file(const char *fromfile, const char *tofile);
  
 diff --git a/src/include/storage/md.h b/src/include/storage/md.h
-index 941879ee6a8..24738aeecd0 100644
+index 941879ee6a..24738aeecd 100644
 --- a/src/include/storage/md.h
 +++ b/src/include/storage/md.h
 @@ -19,6 +19,13 @@
@@ -246,7 +343,7 @@ index 941879ee6a8..24738aeecd0 100644
  extern void mdinit(void);
  extern void mdopen(SMgrRelation reln);
 diff --git a/src/include/storage/sync.h b/src/include/storage/sync.h
-index cfbcfa6797d..2a432440db9 100644
+index cfbcfa6797..2a432440db 100644
 --- a/src/include/storage/sync.h
 +++ b/src/include/storage/sync.h
 @@ -55,6 +55,9 @@ typedef struct FileTag

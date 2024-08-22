@@ -101,11 +101,6 @@ _PG_init(void)
 
 	/*
 	 * Define (or redefine) custom GUC variables.
-	 *
-	 * XXX: for some reason assign_ptrack_map_size is called twice during the
-	 * postmaster boot!  First, it is always called with bootValue, so we use
-	 * -1 as default value and no-op here.  Next, it is called with the actual
-	 * value from config.
 	 */
 	DefineCustomIntVariable("ptrack.map_size",
 							"Sets the size of ptrack map in MB used for incremental backup (0 disabled).",

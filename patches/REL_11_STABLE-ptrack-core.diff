@@ -1,5 +1,5 @@
 diff --git a/src/backend/replication/basebackup.c b/src/backend/replication/basebackup.c
-index 3e53b3df6fb..f76bfc2a646 100644
+index ba4b47443f..62baf8ab4f 100644
 --- a/src/backend/replication/basebackup.c
 +++ b/src/backend/replication/basebackup.c
 @@ -209,6 +209,13 @@ static const struct exclude_list_item excludeFiles[] =
@@ -28,7 +28,7 @@ index 3e53b3df6fb..f76bfc2a646 100644
  	{"config_exec_params", true},
  #endif
 diff --git a/src/backend/storage/file/copydir.c b/src/backend/storage/file/copydir.c
-index 4a0d23b11e3..d59009a4c8c 100644
+index 4a0d23b11e..d59009a4c8 100644
 --- a/src/backend/storage/file/copydir.c
 +++ b/src/backend/storage/file/copydir.c
 @@ -27,6 +27,8 @@
@@ -51,7 +51,7 @@ index 4a0d23b11e3..d59009a4c8c 100644
  	 * Be paranoid here and fsync all files to ensure the copy is really done.
  	 * But if fsync is disabled, we're done.
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
-index 200cc7f657a..d0dcb5c0287 100644
+index 5418452261..3332a3c717 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
 @@ -39,6 +39,7 @@
@@ -71,7 +71,7 @@ index 200cc7f657a..d0dcb5c0287 100644
  
  /*
   * In some contexts (currently, standalone backends and the checkpointer)
-@@ -558,6 +561,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+@@ -603,6 +606,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  		register_dirty_segment(reln, forknum, v);
  
  	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
@@ -81,7 +81,7 @@ index 200cc7f657a..d0dcb5c0287 100644
  }
  
  /*
-@@ -851,6 +857,9 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+@@ -896,6 +902,9 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  
  	if (!skipFsync && !SmgrIsTemp(reln))
  		register_dirty_segment(reln, forknum, v);
@@ -91,7 +91,7 @@ index 200cc7f657a..d0dcb5c0287 100644
  }
  
  /*
-@@ -1329,6 +1338,9 @@ mdsync(void)
+@@ -1374,6 +1383,9 @@ mdsync(void)
  	CheckpointStats.ckpt_longest_sync = longest;
  	CheckpointStats.ckpt_agg_sync_time = total_elapsed;
  
@@ -101,11 +101,108 @@ index 200cc7f657a..d0dcb5c0287 100644
  	/* Flag successful completion of mdsync */
  	mdsync_in_progress = false;
  }
+diff --git a/src/backend/utils/init/miscinit.c b/src/backend/utils/init/miscinit.c
+index c7f3ee733d..837ee73217 100644
+--- a/src/backend/utils/init/miscinit.c
++++ b/src/backend/utils/init/miscinit.c
+@@ -74,6 +74,11 @@ static Latch LocalLatchData;
+ 
+ bool		IgnoreSystemIndexes = false;
+ 
++/* ----------------------------------------------------------------
++ *				Ptrack functions support
++ * ----------------------------------------------------------------
++ */
++static void check_use_ptrack(const char *libraries);
+ 
+ /* ----------------------------------------------------------------
+  *				database path / name support stuff
+@@ -1601,6 +1606,8 @@ process_shared_preload_libraries(void)
+ 				   "shared_preload_libraries",
+ 				   false);
+ 	process_shared_preload_libraries_in_progress = false;
++
++	check_use_ptrack(shared_preload_libraries_string);
+ }
+ 
+ /*
+@@ -1631,3 +1638,71 @@ pg_bindtextdomain(const char *domain)
+ 	}
+ #endif
+ }
++
++/*-------------------------------------------------------------------------
++ *				Ptrack functions support
++ *-------------------------------------------------------------------------
++ */
++
++/* Persistent copy of ptrack.map to restore after crash */
++#define PTRACK_PATH "global/ptrack.map"
++/* Used for atomical crash-safe update of ptrack.map */
++#define PTRACK_PATH_TMP "global/ptrack.map.tmp"
++
++/*
++ * Check that path is accessible by us and return true if it is
++ * not a directory.
++ */
++static bool
++ptrack_file_exists(const char *path)
++{
++	struct stat st;
++
++	Assert(path != NULL);
++
++	if (stat(path, &st) == 0)
++		return S_ISDIR(st.st_mode) ? false : true;
++	else if (!(errno == ENOENT || errno == ENOTDIR || errno == EACCES))
++		ereport(ERROR,
++				(errcode_for_file_access(),
++				 errmsg("could not access file \"%s\": %m", path)));
++
++	return false;
++}
++
++/*
++ * Delete ptrack files when ptrack is disabled.
++ *
++ * This is performed by postmaster at start,
++ * so that there are no concurrent delete issues.
++ */
++static void
++ptrackCleanFiles(void)
++{
++	char		ptrack_path[MAXPGPATH];
++	char		ptrack_path_tmp[MAXPGPATH];
++
++	sprintf(ptrack_path, "%s/%s", DataDir, PTRACK_PATH);
++	sprintf(ptrack_path_tmp, "%s/%s", DataDir, PTRACK_PATH_TMP);
++
++	elog(DEBUG1, "ptrack: clean map files");
++
++	if (ptrack_file_exists(ptrack_path_tmp))
++		durable_unlink(ptrack_path_tmp, LOG);
++
++	if (ptrack_file_exists(ptrack_path))
++		durable_unlink(ptrack_path, LOG);
++}
++
++static void
++check_use_ptrack(const char *libraries)
++{
++	/* We need to delete the ptrack.map file when ptrack was turned off */
++	if (strstr(shared_preload_libraries_string, "ptrack") == NULL)
++	{
++		ptrackCleanFiles();
++	}
++}
++
++#undef PTRACK_PATH
++#undef PTRACK_PATH_TMP
 diff --git a/src/bin/pg_resetwal/pg_resetwal.c b/src/bin/pg_resetwal/pg_resetwal.c
-index 6fb403a5a8a..6e31ccb3e0f 100644
+index 611edf6ade..ec1c1212bd 100644
 --- a/src/bin/pg_resetwal/pg_resetwal.c
 +++ b/src/bin/pg_resetwal/pg_resetwal.c
-@@ -84,6 +84,7 @@ static void RewriteControlFile(void);
+@@ -85,6 +85,7 @@ static void RewriteControlFile(void);
  static void FindEndOfXLOG(void);
  static void KillExistingXLOG(void);
  static void KillExistingArchiveStatus(void);
@@ -113,7 +210,7 @@ index 6fb403a5a8a..6e31ccb3e0f 100644
  static void WriteEmptyXLOG(void);
  static void usage(void);
  
-@@ -516,6 +517,7 @@ main(int argc, char *argv[])
+@@ -525,6 +526,7 @@ main(int argc, char *argv[])
  	RewriteControlFile();
  	KillExistingXLOG();
  	KillExistingArchiveStatus();
@@ -121,7 +218,7 @@ index 6fb403a5a8a..6e31ccb3e0f 100644
  	WriteEmptyXLOG();
  
  	printf(_("Write-ahead log reset\n"));
-@@ -1201,6 +1203,57 @@ KillExistingArchiveStatus(void)
+@@ -1210,6 +1212,57 @@ KillExistingArchiveStatus(void)
  	}
  }
  
@@ -180,7 +277,7 @@ index 6fb403a5a8a..6e31ccb3e0f 100644
  /*
   * Write an empty XLOG file, containing only the checkpoint record
 diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
-index 197163d5544..fc846e78175 100644
+index 8ea7fafa27..997168fcac 100644
 --- a/src/bin/pg_rewind/filemap.c
 +++ b/src/bin/pg_rewind/filemap.c
 @@ -118,6 +118,10 @@ static const struct exclude_list_item excludeFiles[] =
@@ -195,10 +292,10 @@ index 197163d5544..fc846e78175 100644
  	{NULL, false}
  };
 diff --git a/src/include/miscadmin.h b/src/include/miscadmin.h
-index 80241455357..50dca7bf6f4 100644
+index 7c9f319b67..1e29827030 100644
 --- a/src/include/miscadmin.h
 +++ b/src/include/miscadmin.h
-@@ -367,7 +367,7 @@ typedef enum ProcessingMode
+@@ -379,7 +379,7 @@ typedef enum ProcessingMode
  	NormalProcessing			/* normal processing */
  } ProcessingMode;
  
@@ -208,7 +305,7 @@ index 80241455357..50dca7bf6f4 100644
  #define IsBootstrapProcessingMode() (Mode == BootstrapProcessing)
  #define IsInitProcessingMode()		(Mode == InitProcessing)
 diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
-index 4fef3e21072..e55430879c3 100644
+index 4fef3e2107..e55430879c 100644
 --- a/src/include/storage/copydir.h
 +++ b/src/include/storage/copydir.h
 @@ -13,6 +13,9 @@
@@ -222,7 +319,7 @@ index 4fef3e21072..e55430879c3 100644
  extern void copy_file(char *fromfile, char *tofile);
  
 diff --git a/src/include/storage/smgr.h b/src/include/storage/smgr.h
-index 0298ed1a2bc..24c684771d0 100644
+index 0298ed1a2b..24c684771d 100644
 --- a/src/include/storage/smgr.h
 +++ b/src/include/storage/smgr.h
 @@ -116,6 +116,17 @@ extern void AtEOXact_SMgr(void);
@@ -244,7 +341,7 @@ index 0298ed1a2bc..24c684771d0 100644
  extern void mdclose(SMgrRelation reln, ForkNumber forknum);
  extern void mdcreate(SMgrRelation reln, ForkNumber forknum, bool isRedo);
 diff --git a/src/tools/msvc/Mkvcbuild.pm b/src/tools/msvc/Mkvcbuild.pm
-index b52baa90988..74870c048db 100644
+index b52baa9098..74870c048d 100644
 --- a/src/tools/msvc/Mkvcbuild.pm
 +++ b/src/tools/msvc/Mkvcbuild.pm
 @@ -33,7 +33,7 @@ my @unlink_on_exit;

@@ -1,8 +1,8 @@
 diff --git a/src/backend/access/transam/xlog.c b/src/backend/access/transam/xlog.c
-index 34a2c71812..2d73d8023e 100644
+index ee0fb0e28f..3c0060e233 100644
 --- a/src/backend/access/transam/xlog.c
 +++ b/src/backend/access/transam/xlog.c
-@@ -135,6 +135,7 @@ int			wal_retrieve_retry_interval = 5000;
+@@ -134,6 +134,7 @@ int			wal_retrieve_retry_interval = 5000;
  int			max_slot_wal_keep_size_mb = -1;
  int			wal_decode_buffer_size = 512 * 1024;
  bool		track_wal_io_timing = false;
@@ -10,7 +10,7 @@ index 34a2c71812..2d73d8023e 100644
  
  #ifdef WAL_DEBUG
  bool		XLOG_DEBUG = false;
-@@ -8801,6 +8802,12 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
+@@ -8851,6 +8852,12 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
  		{
  			bool		checkpointfpw;
  
@@ -24,7 +24,7 @@ index 34a2c71812..2d73d8023e 100644
  			 * Force a CHECKPOINT.  Aside from being necessary to prevent torn
  			 * page problems, this guarantees that two successive backup runs
 diff --git a/src/backend/backup/basebackup.c b/src/backend/backup/basebackup.c
-index 9a2bf59e84..ade9115651 100644
+index 01b35e26bd..cb1cf43434 100644
 --- a/src/backend/backup/basebackup.c
 +++ b/src/backend/backup/basebackup.c
 @@ -220,6 +220,13 @@ static const struct exclude_list_item excludeFiles[] =
@@ -65,7 +65,7 @@ index d4fbe54207..b108416c70 100644
  	 * Be paranoid here and fsync all files to ensure the copy is really done.
  	 * But if fsync is disabled, we're done.
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
-index bf0f3ca76d..7d9833a360 100644
+index 6796756358..ab27356a5a 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
 @@ -85,6 +85,8 @@ typedef struct _MdfdVec
@@ -139,8 +139,105 @@ index ab7137d0ff..bc40a763c0 100644
  	/* Flag successful completion of ProcessSyncRequests */
  	sync_in_progress = false;
  }
+diff --git a/src/backend/utils/init/miscinit.c b/src/backend/utils/init/miscinit.c
+index 537d92c0cf..bac656021d 100644
+--- a/src/backend/utils/init/miscinit.c
++++ b/src/backend/utils/init/miscinit.c
+@@ -79,6 +79,11 @@ static Latch LocalLatchData;
+ 
+ bool		IgnoreSystemIndexes = false;
+ 
++/* ----------------------------------------------------------------
++ *				Ptrack functions support
++ * ----------------------------------------------------------------
++ */
++static void check_use_ptrack(const char *libraries);
+ 
+ /* ----------------------------------------------------------------
+  *	common process startup code
+@@ -1848,6 +1853,8 @@ process_shared_preload_libraries(void)
+ 				   false);
+ 	process_shared_preload_libraries_in_progress = false;
+ 	process_shared_preload_libraries_done = true;
++
++	check_use_ptrack(shared_preload_libraries_string);
+ }
+ 
+ /*
+@@ -1890,3 +1897,71 @@ pg_bindtextdomain(const char *domain)
+ 	}
+ #endif
+ }
++
++/*-------------------------------------------------------------------------
++ *				Ptrack functions support
++ *-------------------------------------------------------------------------
++ */
++
++/* Persistent copy of ptrack.map to restore after crash */
++#define PTRACK_PATH "global/ptrack.map"
++/* Used for atomical crash-safe update of ptrack.map */
++#define PTRACK_PATH_TMP "global/ptrack.map.tmp"
++
++/*
++ * Check that path is accessible by us and return true if it is
++ * not a directory.
++ */
++static bool
++ptrack_file_exists(const char *path)
++{
++	struct stat st;
++
++	Assert(path != NULL);
++
++	if (stat(path, &st) == 0)
++		return S_ISDIR(st.st_mode) ? false : true;
++	else if (!(errno == ENOENT || errno == ENOTDIR || errno == EACCES))
++		ereport(ERROR,
++				(errcode_for_file_access(),
++				 errmsg("could not access file \"%s\": %m", path)));
++
++	return false;
++}
++
++/*
++ * Delete ptrack files when ptrack is disabled.
++ *
++ * This is performed by postmaster at start,
++ * so that there are no concurrent delete issues.
++ */
++static void
++ptrackCleanFiles(void)
++{
++	char		ptrack_path[MAXPGPATH];
++	char		ptrack_path_tmp[MAXPGPATH];
++
++	sprintf(ptrack_path, "%s/%s", DataDir, PTRACK_PATH);
++	sprintf(ptrack_path_tmp, "%s/%s", DataDir, PTRACK_PATH_TMP);
++
++	elog(DEBUG1, "ptrack: clean map files");
++
++	if (ptrack_file_exists(ptrack_path_tmp))
++		durable_unlink(ptrack_path_tmp, LOG);
++
++	if (ptrack_file_exists(ptrack_path))
++		durable_unlink(ptrack_path, LOG);
++}
++
++static void
++check_use_ptrack(const char *libraries)
++{
++	/* We need to delete the ptrack.map file when ptrack was turned off */
++	if (strstr(shared_preload_libraries_string, "ptrack") == NULL)
++	{
++		ptrackCleanFiles();
++	}
++}
++
++#undef PTRACK_PATH
++#undef PTRACK_PATH_TMP
 diff --git a/src/bin/pg_checksums/pg_checksums.c b/src/bin/pg_checksums/pg_checksums.c
-index 9e6fd435f6..f2180b9f6d 100644
+index b5bb0e7887..11611b15f8 100644
 --- a/src/bin/pg_checksums/pg_checksums.c
 +++ b/src/bin/pg_checksums/pg_checksums.c
 @@ -110,6 +110,11 @@ static const struct exclude_list_item skip[] = {
@@ -233,10 +330,10 @@ index 4458324c9d..7d857467f7 100644
  	{NULL, false}
  };
 diff --git a/src/include/access/xlog.h b/src/include/access/xlog.h
-index 76787a8267..2c662f4022 100644
+index 083810f5b4..51667297d5 100644
 --- a/src/include/access/xlog.h
 +++ b/src/include/access/xlog.h
-@@ -57,6 +57,9 @@ extern PGDLLIMPORT int wal_decode_buffer_size;
+@@ -59,6 +59,9 @@ extern PGDLLIMPORT int wal_decode_buffer_size;
  
  extern PGDLLIMPORT int CheckPointSegments;
  
