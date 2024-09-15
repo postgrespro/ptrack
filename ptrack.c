@@ -656,7 +656,7 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 #if USE_ASSERT_CHECKING
 			if (update_lsn2 != InvalidXLogRecPtr)
 				elog(DEBUG3, "ptrack: update_lsn2 %X/%X of blckno %u of file %s",
-					 (uint32) (update_lsn1 >> 32), (uint32) update_lsn2,
+					 (uint32) (update_lsn2 >> 32), (uint32) update_lsn2,
 					 ctx->bid.blocknum, ctx->relpath);
 #endif
 
