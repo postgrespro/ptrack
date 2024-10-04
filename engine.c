@@ -659,6 +659,10 @@ XLogRecPtr
 ptrack_set_init_lsn(void)
 {
 	XLogRecPtr new_lsn;
+
+	if (ptrack_map_size == 0 || ptrack_map == NULL)
+		return InvalidXLogRecPtr;
+
 	if (RecoveryInProgress())
 		new_lsn = GetXLogReplayRecPtr(NULL);
 	else
