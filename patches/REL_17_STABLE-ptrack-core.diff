@@ -1,8 +1,33 @@
+diff --git a/src/backend/access/transam/xlog.c b/src/backend/access/transam/xlog.c
+index 7f13602627..297176acc3 100644
+--- a/src/backend/access/transam/xlog.c
++++ b/src/backend/access/transam/xlog.c
+@@ -135,6 +135,7 @@ int			wal_retrieve_retry_interval = 5000;
+ int			max_slot_wal_keep_size_mb = -1;
+ int			wal_decode_buffer_size = 512 * 1024;
+ bool		track_wal_io_timing = false;
++backup_checkpoint_request_hook_type backup_checkpoint_request_hook = NULL;
+ 
+ #ifdef WAL_DEBUG
+ bool		XLOG_DEBUG = false;
+@@ -8846,6 +8847,12 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
+ 		{
+ 			bool		checkpointfpw;
+ 
++			/*
++			 * Before we call RequestCheckpoint() we need to set
++			 * init_lsn for ptrack map
++			 */
++			if (backup_checkpoint_request_hook)
++				backup_checkpoint_request_hook();
+ 			/*
+ 			 * Force a CHECKPOINT.  Aside from being necessary to prevent torn
+ 			 * page problems, this guarantees that two successive backup runs
 diff --git a/src/backend/backup/basebackup.c b/src/backend/backup/basebackup.c
-index 847a52f599..874b98c89f 100644
+index 9a2bf59e84..ade9115651 100644
 --- a/src/backend/backup/basebackup.c
 +++ b/src/backend/backup/basebackup.c
-@@ -197,6 +197,13 @@ static const struct exclude_list_item excludeFiles[] =
+@@ -220,6 +220,13 @@ static const struct exclude_list_item excludeFiles[] =
  	{"postmaster.pid", false},
  	{"postmaster.opts", false},
  
@@ -16,20 +41,8 @@ index 847a52f599..874b98c89f 100644
  	/* end of list */
  	{NULL, false}
  };
-@@ -212,6 +219,11 @@ static const struct exclude_list_item noChecksumFiles[] = {
- 	{"pg_filenode.map", false},
- 	{"pg_internal.init", true},
- 	{"PG_VERSION", false},
-+
-+	{"ptrack.map.mmap", false},
-+	{"ptrack.map", false},
-+	{"ptrack.map.tmp", false},
-+
- #ifdef EXEC_BACKEND
- 	{"config_exec_params", true},
- #endif
 diff --git a/src/backend/storage/file/copydir.c b/src/backend/storage/file/copydir.c
-index 658fd95ba9..eee38eba17 100644
+index d4fbe54207..b108416c70 100644
 --- a/src/backend/storage/file/copydir.c
 +++ b/src/backend/storage/file/copydir.c
 @@ -27,6 +27,8 @@
@@ -41,7 +54,7 @@ index 658fd95ba9..eee38eba17 100644
  /*
   * copydir: copy a directory
   *
-@@ -78,6 +80,9 @@ copydir(char *fromdir, char *todir, bool recurse)
+@@ -75,6 +77,9 @@ copydir(const char *fromdir, const char *todir, bool recurse)
  	}
  	FreeDir(xldir);
  
@@ -52,10 +65,10 @@ index 658fd95ba9..eee38eba17 100644
  	 * Be paranoid here and fsync all files to ensure the copy is really done.
  	 * But if fsync is disabled, we're done.
 diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
-index f14c48da6c..9c37dcbcf8 100644
+index 6796756358..ab27356a5a 100644
 --- a/src/backend/storage/smgr/md.c
 +++ b/src/backend/storage/smgr/md.c
-@@ -87,6 +87,8 @@ typedef struct _MdfdVec
+@@ -85,6 +85,8 @@ typedef struct _MdfdVec
  
  static MemoryContext MdCxt;		/* context for all MdfdVec objects */
  
@@ -63,32 +76,51 @@ index f14c48da6c..9c37dcbcf8 100644
 +mdwrite_hook_type mdwrite_hook = NULL;
  
  /* Populate a file tag describing an md.c segment file. */
- #define INIT_MD_FILETAG(a,xx_rnode,xx_forknum,xx_segno) \
-@@ -501,6 +503,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+ #define INIT_MD_FILETAG(a,xx_rlocator,xx_forknum,xx_segno) \
+@@ -513,6 +515,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
  		register_dirty_segment(reln, forknum, v);
  
  	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
 +
 +	if (mdextend_hook)
-+		mdextend_hook(reln->smgr_rnode, forknum, blocknum);
++		mdextend_hook(reln->smgr_rlocator, forknum, blocknum);
  }
  
  /*
-@@ -790,6 +795,9 @@ mdwrite(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+@@ -620,6 +625,12 @@ mdzeroextend(SMgrRelation reln, ForkNumber forknum,
  
- 	if (!skipFsync && !SmgrIsTemp(reln))
- 		register_dirty_segment(reln, forknum, v);
+ 		remblocks -= numblocks;
+ 		curblocknum += numblocks;
 +
-+	if (mdwrite_hook)
-+		mdwrite_hook(reln->smgr_rnode, forknum, blocknum);
++		if (mdextend_hook)
++		{
++			for (; blocknum < curblocknum; blocknum++)
++				mdextend_hook(reln->smgr_rlocator, forknum, blocknum);
++		}
+ 	}
  }
  
- /*
+@@ -1015,7 +1026,14 @@ mdwritev(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+ 
+ 		nblocks -= nblocks_this_segment;
+ 		buffers += nblocks_this_segment;
+-		blocknum += nblocks_this_segment;
++
++		if (mdwrite_hook)
++		{
++			for (; nblocks_this_segment--; blocknum++)
++				mdwrite_hook(reln->smgr_rlocator, forknum, blocknum);
++		}
++		else
++			blocknum += nblocks_this_segment;
+ 	}
+ }
+ 
 diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
-index e1fb631003..76d75680b3 100644
+index ab7137d0ff..bc40a763c0 100644
 --- a/src/backend/storage/sync/sync.c
 +++ b/src/backend/storage/sync/sync.c
-@@ -81,6 +81,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
+@@ -74,6 +74,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
  static CycleCtr sync_cycle_ctr = 0;
  static CycleCtr checkpoint_cycle_ctr = 0;
  
@@ -97,7 +129,7 @@ index e1fb631003..76d75680b3 100644
  /* Intervals for calling AbsorbSyncRequests */
  #define FSYNCS_PER_ABSORB		10
  #define UNLINKS_PER_ABSORB		10
-@@ -477,6 +479,9 @@ ProcessSyncRequests(void)
+@@ -470,6 +472,9 @@ ProcessSyncRequests(void)
  	CheckpointStats.ckpt_longest_sync = longest;
  	CheckpointStats.ckpt_agg_sync_time = total_elapsed;
  
@@ -108,7 +140,7 @@ index e1fb631003..76d75680b3 100644
  	sync_in_progress = false;
  }
 diff --git a/src/backend/utils/init/miscinit.c b/src/backend/utils/init/miscinit.c
-index 79373f2c8f..ea0ca6a4c1 100644
+index 537d92c0cf..bac656021d 100644
 --- a/src/backend/utils/init/miscinit.c
 +++ b/src/backend/utils/init/miscinit.c
 @@ -79,6 +79,11 @@ static Latch LocalLatchData;
@@ -123,7 +155,7 @@ index 79373f2c8f..ea0ca6a4c1 100644
  
  /* ----------------------------------------------------------------
   *	common process startup code
-@@ -1696,6 +1701,8 @@ process_shared_preload_libraries(void)
+@@ -1848,6 +1853,8 @@ process_shared_preload_libraries(void)
  				   false);
  	process_shared_preload_libraries_in_progress = false;
  	process_shared_preload_libraries_done = true;
@@ -132,7 +164,7 @@ index 79373f2c8f..ea0ca6a4c1 100644
  }
  
  /*
-@@ -1738,3 +1745,71 @@ pg_bindtextdomain(const char *domain)
+@@ -1890,3 +1897,71 @@ pg_bindtextdomain(const char *domain)
  	}
  #endif
  }
@@ -205,10 +237,10 @@ index 79373f2c8f..ea0ca6a4c1 100644
 +#undef PTRACK_PATH
 +#undef PTRACK_PATH_TMP
 diff --git a/src/bin/pg_checksums/pg_checksums.c b/src/bin/pg_checksums/pg_checksums.c
-index 1af65cd2de..930b1eacd0 100644
+index 9e6fd435f6..f2180b9f6d 100644
 --- a/src/bin/pg_checksums/pg_checksums.c
 +++ b/src/bin/pg_checksums/pg_checksums.c
-@@ -118,6 +118,11 @@ static const struct exclude_list_item skip[] = {
+@@ -110,6 +110,11 @@ static const struct exclude_list_item skip[] = {
  	{"pg_filenode.map", false},
  	{"pg_internal.init", true},
  	{"PG_VERSION", false},
@@ -221,27 +253,27 @@ index 1af65cd2de..930b1eacd0 100644
  	{"config_exec_params", true},
  #endif
 diff --git a/src/bin/pg_resetwal/pg_resetwal.c b/src/bin/pg_resetwal/pg_resetwal.c
-index d4772a2965..3318f64359 100644
+index e9dcb5a6d8..844b04d5e1 100644
 --- a/src/bin/pg_resetwal/pg_resetwal.c
 +++ b/src/bin/pg_resetwal/pg_resetwal.c
-@@ -85,6 +85,7 @@ static void RewriteControlFile(void);
- static void FindEndOfXLOG(void);
+@@ -86,6 +86,7 @@ static void FindEndOfXLOG(void);
  static void KillExistingXLOG(void);
  static void KillExistingArchiveStatus(void);
+ static void KillExistingWALSummaries(void);
 +static void KillExistingPtrack(void);
  static void WriteEmptyXLOG(void);
  static void usage(void);
  
-@@ -488,6 +489,7 @@ main(int argc, char *argv[])
- 	RewriteControlFile();
+@@ -495,6 +496,7 @@ main(int argc, char *argv[])
  	KillExistingXLOG();
  	KillExistingArchiveStatus();
+ 	KillExistingWALSummaries();
 +	KillExistingPtrack();
  	WriteEmptyXLOG();
  
  	printf(_("Write-ahead log reset\n"));
-@@ -1036,6 +1038,41 @@ KillExistingArchiveStatus(void)
- 		pg_fatal("could not close directory \"%s\": %m", ARCHSTATDIR);
+@@ -998,6 +1000,41 @@ KillExistingXLOG(void)
+ 		pg_fatal("could not close directory \"%s\": %m", XLOGDIR);
  }
  
 +/*
@@ -281,12 +313,12 @@ index d4772a2965..3318f64359 100644
 +
  
  /*
-  * Write an empty XLOG file, containing only the checkpoint record
+  * Remove existing archive status files
 diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
-index 24f508c6ef..3dbd545350 100644
+index 4458324c9d..7d857467f7 100644
 --- a/src/bin/pg_rewind/filemap.c
 +++ b/src/bin/pg_rewind/filemap.c
-@@ -157,6 +157,10 @@ static const struct exclude_list_item excludeFiles[] =
+@@ -156,6 +156,10 @@ static const struct exclude_list_item excludeFiles[] =
  	{"postmaster.pid", false},
  	{"postmaster.opts", false},
  
@@ -297,8 +329,22 @@ index 24f508c6ef..3dbd545350 100644
  	/* end of list */
  	{NULL, false}
  };
+diff --git a/src/include/access/xlog.h b/src/include/access/xlog.h
+index 2c507ea618..08e2750832 100644
+--- a/src/include/access/xlog.h
++++ b/src/include/access/xlog.h
+@@ -57,6 +57,9 @@ extern PGDLLIMPORT int wal_decode_buffer_size;
+ 
+ extern PGDLLIMPORT int CheckPointSegments;
+ 
++typedef void (*backup_checkpoint_request_hook_type) (void);
++extern PGDLLIMPORT backup_checkpoint_request_hook_type backup_checkpoint_request_hook;
++
+ /* Archive modes */
+ typedef enum ArchiveMode
+ {
 diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
-index 50a26edeb0..af1602f515 100644
+index a25e258f47..b20b9c76e8 100644
 --- a/src/include/storage/copydir.h
 +++ b/src/include/storage/copydir.h
 @@ -13,6 +13,9 @@
@@ -308,21 +354,21 @@ index 50a26edeb0..af1602f515 100644
 +typedef void (*copydir_hook_type) (const char *path);
 +extern PGDLLIMPORT copydir_hook_type copydir_hook;
 +
- extern void copydir(char *fromdir, char *todir, bool recurse);
- extern void copy_file(char *fromfile, char *tofile);
+ extern void copydir(const char *fromdir, const char *todir, bool recurse);
+ extern void copy_file(const char *fromfile, const char *tofile);
  
 diff --git a/src/include/storage/md.h b/src/include/storage/md.h
-index ffffa40db7..3ff98e0bf0 100644
+index 620f10abde..b36936871b 100644
 --- a/src/include/storage/md.h
 +++ b/src/include/storage/md.h
 @@ -19,6 +19,13 @@
  #include "storage/smgr.h"
  #include "storage/sync.h"
  
-+typedef void (*mdextend_hook_type) (RelFileNodeBackend smgr_rnode,
++typedef void (*mdextend_hook_type) (RelFileLocatorBackend smgr_rlocator,
 +									ForkNumber forknum, BlockNumber blocknum);
 +extern PGDLLIMPORT mdextend_hook_type mdextend_hook;
-+typedef void (*mdwrite_hook_type) (RelFileNodeBackend smgr_rnode,
++typedef void (*mdwrite_hook_type) (RelFileLocatorBackend smgr_rlocator,
 +									ForkNumber forknum, BlockNumber blocknum);
 +extern PGDLLIMPORT mdwrite_hook_type mdwrite_hook;
 +
@@ -330,11 +376,11 @@ index ffffa40db7..3ff98e0bf0 100644
  extern void mdinit(void);
  extern void mdopen(SMgrRelation reln);
 diff --git a/src/include/storage/sync.h b/src/include/storage/sync.h
-index 9737e1eb67..914ad86328 100644
+index 9dee8fa6e5..348ed53e4e 100644
 --- a/src/include/storage/sync.h
 +++ b/src/include/storage/sync.h
 @@ -55,6 +55,9 @@ typedef struct FileTag
- 	uint32		segno;
+ 	uint64		segno;
  } FileTag;
  
 +typedef void (*ProcessSyncRequests_hook_type) (void);

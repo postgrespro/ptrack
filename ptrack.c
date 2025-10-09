@@ -101,11 +101,6 @@ _PG_init(void)
 
 	/*
 	 * Define (or redefine) custom GUC variables.
-	 *
-	 * XXX: for some reason assign_ptrack_map_size is called twice during the
-	 * postmaster boot!  First, it is always called with bootValue, so we use
-	 * -1 as default value and no-op here.  Next, it is called with the actual
-	 * value from config.
 	 */
 	DefineCustomIntVariable("ptrack.map_size",
 							"Sets the size of ptrack map in MB used for incremental backup (0 disabled).",
@@ -387,7 +382,7 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 				ptrack_gather_filelist(filelist, subpath, spcOid, InvalidOid);
 		}
 		/* TODO: is it enough to properly check symlink support? */
-#if !defined(WIN32) || (PG_VERSION_NUM >= 160000)
+#if !defined(WIN32) || (PG_VERSION_NUM >= 140000)
 		else if (S_ISLNK(fst.st_mode))
 #else
 		else if (pgwin32_is_junction(subpath))

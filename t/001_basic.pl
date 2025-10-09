@@ -28,7 +28,7 @@ BEGIN
 	}
 }
 
-plan tests => 23;
+plan tests => 25;
 
 note('PostgreSQL 15 modules are used: ' . ($pg_15_modules ? 'yes' : 'no'));
 
@@ -199,6 +199,25 @@ like(
 	$res_stderr,
 	qr/ptrack is disabled/,
 	'warning if ptrack is disabled');
+
+# Check that the map files were deleted when ptrack was turned off
+$node->append_conf(
+	'postgresql.conf', q{
+ptrack.map_size = 16
+});
+$node->restart;
+
+$node->safe_psql("postgres", "CHECKPOINT");
+
+ok(-f $node->data_dir . "/global/ptrack.map", "ptrack.map must be created");
+
+$node->append_conf(
+	'postgresql.conf', q{
+shared_preload_libraries = ''
+});
+$node->restart;
+
+ok(! -f $node->data_dir . "/global/ptrack.map", "ptrack.map should be cleaned up");
 
 $node->stop;
 
