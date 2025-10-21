@@ -290,6 +290,10 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 {
 	DIR		   *dir;
 	struct dirent *de;
+#if PG_VERSION_NUM >= 180000
+	RelPathStr	str;
+#endif
+
 	dir = AllocateDir(path);
 
 	while ((de = ReadDirExtended(dir, path, LOG)) != NULL)
@@ -364,8 +368,14 @@ ptrack_gather_filelist(List **filelist, char *path, Oid spcOid, Oid dbOid)
 #endif
 				nodeDb(pfl->relnode) = dbOid;
 				nodeSpc(pfl->relnode) = spcOid == InvalidOid ? DEFAULTTABLESPACE_OID : spcOid;
+#if PG_VERSION_NUM >= 180000
+				str = GetRelationPath(dbOid, nodeSpc(pfl->relnode),
+									  nodeRel(pfl->relnode), InvalidBackendId, pfl->forknum);
+				pfl->path = pstrdup(str.str);
+#else
 				pfl->path = GetRelationPath(dbOid, nodeSpc(pfl->relnode),
 											nodeRel(pfl->relnode), InvalidBackendId, pfl->forknum);
+#endif
 
 				*filelist = lappend(*filelist, pfl);
 
