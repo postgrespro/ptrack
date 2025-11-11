@@ -1,0 +1,389 @@
+diff --git a/src/backend/access/transam/xlog.c b/src/backend/access/transam/xlog.c
+index 596d2ca5836..3a72b8d2bf4 100644
+--- a/src/backend/access/transam/xlog.c
++++ b/src/backend/access/transam/xlog.c
+@@ -136,6 +136,7 @@ int			wal_retrieve_retry_interval = 5000;
+ int			max_slot_wal_keep_size_mb = -1;
+ int			wal_decode_buffer_size = 512 * 1024;
+ bool		track_wal_io_timing = false;
++backup_checkpoint_request_hook_type backup_checkpoint_request_hook = NULL;
+ 
+ #ifdef WAL_DEBUG
+ bool		XLOG_DEBUG = false;
+@@ -8929,6 +8930,12 @@ do_pg_backup_start(const char *backupidstr, bool fast, List **tablespaces,
+ 		{
+ 			bool		checkpointfpw;
+ 
++			/*
++			 * Before we call RequestCheckpoint() we need to set
++			 * init_lsn for ptrack map
++			 */
++			if (backup_checkpoint_request_hook)
++				backup_checkpoint_request_hook();
+ 			/*
+ 			 * Force a CHECKPOINT.  Aside from being necessary to prevent torn
+ 			 * page problems, this guarantees that two successive backup runs
+diff --git a/src/backend/backup/basebackup.c b/src/backend/backup/basebackup.c
+index f0f88838dc2..239d50be357 100644
+--- a/src/backend/backup/basebackup.c
++++ b/src/backend/backup/basebackup.c
+@@ -219,6 +219,12 @@ static const struct exclude_list_item excludeFiles[] =
+ 
+ 	{"postmaster.pid", false},
+ 	{"postmaster.opts", false},
++	/*
++	 * Skip all transient ptrack files, but do copy ptrack.map, since it may
++	 * be successfully used immediately after backup. TODO: check, test?
++	 */
++	{"ptrack.map.mmap", false},
++	{"ptrack.map.tmp", false},
+ 
+ 	/* end of list */
+ 	{NULL, false}
+diff --git a/src/backend/storage/file/copydir.c b/src/backend/storage/file/copydir.c
+index aa8c64a2c9e..56ed1b4df0a 100644
+--- a/src/backend/storage/file/copydir.c
++++ b/src/backend/storage/file/copydir.c
+@@ -30,6 +30,8 @@
+ #include "storage/copydir.h"
+ #include "storage/fd.h"
+ 
++copydir_hook_type copydir_hook = NULL;
++
+ /* GUCs */
+ int			file_copy_method = FILE_COPY_METHOD_COPY;
+ 
+@@ -91,6 +93,9 @@ copydir(const char *fromdir, const char *todir, bool recurse)
+ 	}
+ 	FreeDir(xldir);
+ 
++	if (copydir_hook)
++		copydir_hook(todir);
++
+ 	/*
+ 	 * Be paranoid here and fsync all files to ensure the copy is really done.
+ 	 * But if fsync is disabled, we're done.
+diff --git a/src/backend/storage/smgr/md.c b/src/backend/storage/smgr/md.c
+index 2ccb0faceb5..ad08c0c6960 100644
+--- a/src/backend/storage/smgr/md.c
++++ b/src/backend/storage/smgr/md.c
+@@ -86,6 +86,8 @@ typedef struct _MdfdVec
+ 
+ static MemoryContext MdCxt;		/* context for all MdfdVec objects */
+ 
++mdextend_hook_type mdextend_hook = NULL;
++mdwrite_hook_type mdwrite_hook = NULL;
+ 
+ /* Populate a file tag describing an md.c segment file. */
+ #define INIT_MD_FILETAG(a,xx_rlocator,xx_forknum,xx_segno) \
+@@ -530,6 +532,9 @@ mdextend(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+ 		register_dirty_segment(reln, forknum, v);
+ 
+ 	Assert(_mdnblocks(reln, forknum, v) <= ((BlockNumber) RELSEG_SIZE));
++
++	if (mdextend_hook)
++		mdextend_hook(reln->smgr_rlocator, forknum, blocknum);
+ }
+ 
+ /*
+@@ -637,6 +642,12 @@ mdzeroextend(SMgrRelation reln, ForkNumber forknum,
+ 
+ 		remblocks -= numblocks;
+ 		curblocknum += numblocks;
++
++		if (mdextend_hook)
++		{
++			for (; blocknum < curblocknum; blocknum++)
++				mdextend_hook(reln->smgr_rlocator, forknum, blocknum);
++		}
+ 	}
+ }
+ 
+@@ -1139,7 +1150,14 @@ mdwritev(SMgrRelation reln, ForkNumber forknum, BlockNumber blocknum,
+ 
+ 		nblocks -= nblocks_this_segment;
+ 		buffers += nblocks_this_segment;
+-		blocknum += nblocks_this_segment;
++
++		if (mdwrite_hook)
++		{
++			for (; nblocks_this_segment--; blocknum++)
++				mdwrite_hook(reln->smgr_rlocator, forknum, blocknum);
++		}
++		else
++			blocknum += nblocks_this_segment;
+ 	}
+ }
+ 
+diff --git a/src/backend/storage/sync/sync.c b/src/backend/storage/sync/sync.c
+index fc16db90133..08cd553ad55 100644
+--- a/src/backend/storage/sync/sync.c
++++ b/src/backend/storage/sync/sync.c
+@@ -74,6 +74,8 @@ static MemoryContext pendingOpsCxt; /* context for the above  */
+ static CycleCtr sync_cycle_ctr = 0;
+ static CycleCtr checkpoint_cycle_ctr = 0;
+ 
++ProcessSyncRequests_hook_type ProcessSyncRequests_hook = NULL;
++
+ /* Intervals for calling AbsorbSyncRequests */
+ #define FSYNCS_PER_ABSORB		10
+ #define UNLINKS_PER_ABSORB		10
+@@ -470,6 +472,9 @@ ProcessSyncRequests(void)
+ 	CheckpointStats.ckpt_longest_sync = longest;
+ 	CheckpointStats.ckpt_agg_sync_time = total_elapsed;
+ 
++	if (ProcessSyncRequests_hook)
++		ProcessSyncRequests_hook();
++
+ 	/* Flag successful completion of ProcessSyncRequests */
+ 	sync_in_progress = false;
+ }
+diff --git a/src/backend/utils/init/miscinit.c b/src/backend/utils/init/miscinit.c
+index df182577a19..8e4d7526db1 100644
+--- a/src/backend/utils/init/miscinit.c
++++ b/src/backend/utils/init/miscinit.c
+@@ -80,6 +80,11 @@ static Latch LocalLatchData;
+ 
+ bool		IgnoreSystemIndexes = false;
+ 
++/* ----------------------------------------------------------------
++ *				Ptrack functions support
++ * ----------------------------------------------------------------
++ */
++static void check_use_ptrack(const char *libraries);
+ 
+ /* ----------------------------------------------------------------
+  *	common process startup code
+@@ -1908,6 +1913,8 @@ process_shared_preload_libraries(void)
+ 				   false);
+ 	process_shared_preload_libraries_in_progress = false;
+ 	process_shared_preload_libraries_done = true;
++
++	check_use_ptrack(shared_preload_libraries_string);
+ }
+ 
+ /*
+@@ -1950,3 +1957,71 @@ pg_bindtextdomain(const char *domain)
+ 	}
+ #endif
+ }
++
++/*-------------------------------------------------------------------------
++ *				Ptrack functions support
++ *-------------------------------------------------------------------------
++ */
++
++/* Persistent copy of ptrack.map to restore after crash */
++#define PTRACK_PATH "global/ptrack.map"
++/* Used for atomical crash-safe update of ptrack.map */
++#define PTRACK_PATH_TMP "global/ptrack.map.tmp"
++
++/*
++ * Check that path is accessible by us and return true if it is
++ * not a directory.
++ */
++static bool
++ptrack_file_exists(const char *path)
++{
++	struct stat st;
++
++	Assert(path != NULL);
++
++	if (stat(path, &st) == 0)
++		return S_ISDIR(st.st_mode) ? false : true;
++	else if (!(errno == ENOENT || errno == ENOTDIR || errno == EACCES))
++		ereport(ERROR,
++				(errcode_for_file_access(),
++				 errmsg("could not access file \"%s\": %m", path)));
++
++	return false;
++}
++
++/*
++ * Delete ptrack files when ptrack is disabled.
++ *
++ * This is performed by postmaster at start,
++ * so that there are no concurrent delete issues.
++ */
++static void
++ptrackCleanFiles(void)
++{
++	char		ptrack_path[MAXPGPATH];
++	char		ptrack_path_tmp[MAXPGPATH];
++
++	sprintf(ptrack_path, "%s/%s", DataDir, PTRACK_PATH);
++	sprintf(ptrack_path_tmp, "%s/%s", DataDir, PTRACK_PATH_TMP);
++
++	elog(DEBUG1, "ptrack: clean map files");
++
++	if (ptrack_file_exists(ptrack_path_tmp))
++		durable_unlink(ptrack_path_tmp, LOG);
++
++	if (ptrack_file_exists(ptrack_path))
++		durable_unlink(ptrack_path, LOG);
++}
++
++static void
++check_use_ptrack(const char *libraries)
++{
++	/* We need to delete the ptrack.map file when ptrack was turned off */
++	if (strstr(shared_preload_libraries_string, "ptrack") == NULL)
++	{
++		ptrackCleanFiles();
++	}
++}
++
++#undef PTRACK_PATH
++#undef PTRACK_PATH_TMP
+diff --git a/src/bin/pg_checksums/pg_checksums.c b/src/bin/pg_checksums/pg_checksums.c
+index f20be82862a..84c1d82b9cd 100644
+--- a/src/bin/pg_checksums/pg_checksums.c
++++ b/src/bin/pg_checksums/pg_checksums.c
+@@ -109,6 +109,11 @@ static const struct exclude_list_item skip[] = {
+ 	{"pg_filenode.map", false},
+ 	{"pg_internal.init", true},
+ 	{"PG_VERSION", false},
++
++	{"ptrack.map.mmap", false},
++	{"ptrack.map", false},
++	{"ptrack.map.tmp", false},
++
+ #ifdef EXEC_BACKEND
+ 	{"config_exec_params", true},
+ #endif
+diff --git a/src/bin/pg_resetwal/pg_resetwal.c b/src/bin/pg_resetwal/pg_resetwal.c
+index e876f35f38e..1fa3bf4d222 100644
+--- a/src/bin/pg_resetwal/pg_resetwal.c
++++ b/src/bin/pg_resetwal/pg_resetwal.c
+@@ -87,6 +87,7 @@ static void FindEndOfXLOG(void);
+ static void KillExistingXLOG(void);
+ static void KillExistingArchiveStatus(void);
+ static void KillExistingWALSummaries(void);
++static void KillExistingPtrack(void);
+ static void WriteEmptyXLOG(void);
+ static void usage(void);
+ 
+@@ -517,6 +518,7 @@ main(int argc, char *argv[])
+ 	KillExistingXLOG();
+ 	KillExistingArchiveStatus();
+ 	KillExistingWALSummaries();
++	KillExistingPtrack();
+ 	WriteEmptyXLOG();
+ 
+ 	printf(_("Write-ahead log reset\n"));
+@@ -1022,6 +1024,40 @@ KillExistingXLOG(void)
+ 		pg_fatal("could not close directory \"%s\": %m", XLOGDIR);
+ }
+ 
++/*
++ * Remove existing ptrack files
++ */
++static void
++KillExistingPtrack(void)
++{
++#define PTRACKDIR "global"
++
++	DIR            *xldir;
++	struct dirent  *xlde;
++	char            path[MAXPGPATH + sizeof(PTRACKDIR)];
++
++	xldir = opendir(PTRACKDIR);
++	if (xldir == NULL)
++		pg_fatal("could not open directory \"%s\": %m", PTRACKDIR);
++
++	while (errno = 0, (xlde = readdir(xldir)) != NULL)
++	{
++		if (strcmp(xlde->d_name, "ptrack.map.mmap") == 0 ||
++			strcmp(xlde->d_name, "ptrack.map") == 0 ||
++			strcmp(xlde->d_name, "ptrack.map.tmp") == 0)
++		{
++			snprintf(path, sizeof(path), "%s/%s", PTRACKDIR, xlde->d_name);
++			if (unlink(path) < 0)
++				pg_fatal("could not delete file \"%s\": %m", path);
++		}
++	}
++
++	if (errno)
++		pg_fatal("could not read directory \"%s\": %m", PTRACKDIR);
++
++	if (closedir(xldir))
++		pg_fatal("could not close directory \"%s\": %m", PTRACKDIR);
++}
+ 
+ /*
+  * Remove existing archive status files
+diff --git a/src/bin/pg_rewind/filemap.c b/src/bin/pg_rewind/filemap.c
+index c933871ca9f..f34c0edf350 100644
+--- a/src/bin/pg_rewind/filemap.c
++++ b/src/bin/pg_rewind/filemap.c
+@@ -186,6 +186,10 @@ static const struct exclude_list_item excludeFiles[] =
+ 	{"postmaster.pid", false},
+ 	{"postmaster.opts", false},
+ 
++	{"ptrack.map.mmap", false},
++	{"ptrack.map", false},
++	{"ptrack.map.tmp", false},
++
+ 	/* end of list */
+ 	{NULL, false}
+ };
+diff --git a/src/include/access/xlog.h b/src/include/access/xlog.h
+index adddac6710e..d57d04a6fd5 100644
+--- a/src/include/access/xlog.h
++++ b/src/include/access/xlog.h
+@@ -59,6 +59,9 @@ extern PGDLLIMPORT int wal_decode_buffer_size;
+ 
+ extern PGDLLIMPORT int CheckPointSegments;
+ 
++typedef void (*backup_checkpoint_request_hook_type) (void);
++extern PGDLLIMPORT backup_checkpoint_request_hook_type backup_checkpoint_request_hook;
++
+ /* Archive modes */
+ typedef enum ArchiveMode
+ {
+diff --git a/src/include/storage/copydir.h b/src/include/storage/copydir.h
+index f1d7beeed1a..f162c4405dc 100644
+--- a/src/include/storage/copydir.h
++++ b/src/include/storage/copydir.h
+@@ -22,6 +22,9 @@ typedef enum FileCopyMethod
+ /* GUC parameters */
+ extern PGDLLIMPORT int file_copy_method;
+ 
++typedef void (*copydir_hook_type) (const char *path);
++extern PGDLLIMPORT copydir_hook_type copydir_hook;
++
+ extern void copydir(const char *fromdir, const char *todir, bool recurse);
+ extern void copy_file(const char *fromfile, const char *tofile);
+ 
+diff --git a/src/include/storage/md.h b/src/include/storage/md.h
+index b563c27abf0..29fbc1c80c3 100644
+--- a/src/include/storage/md.h
++++ b/src/include/storage/md.h
+@@ -22,6 +22,13 @@
+ 
+ extern PGDLLIMPORT const PgAioHandleCallbacks aio_md_readv_cb;
+ 
++typedef void (*mdextend_hook_type) (RelFileLocatorBackend smgr_rlocator,
++									ForkNumber forknum, BlockNumber blocknum);
++extern PGDLLIMPORT mdextend_hook_type mdextend_hook;
++typedef void (*mdwrite_hook_type) (RelFileLocatorBackend smgr_rlocator,
++									ForkNumber forknum, BlockNumber blocknum);
++extern PGDLLIMPORT mdwrite_hook_type mdwrite_hook;
++
+ /* md storage manager functionality */
+ extern void mdinit(void);
+ extern void mdopen(SMgrRelation reln);
+diff --git a/src/include/storage/sync.h b/src/include/storage/sync.h
+index c2272d14175..4132cfd92c6 100644
+--- a/src/include/storage/sync.h
++++ b/src/include/storage/sync.h
+@@ -55,6 +55,9 @@ typedef struct FileTag
+ 	uint64		segno;
+ } FileTag;
+ 
++typedef void (*ProcessSyncRequests_hook_type) (void);
++extern PGDLLIMPORT ProcessSyncRequests_hook_type ProcessSyncRequests_hook;
++
+ extern void InitSync(void);
+ extern void SyncPreCheckpoint(void);
+ extern void SyncPostCheckpoint(void);
