@@ -117,9 +117,9 @@ my $flush_lsn = $node->safe_psql("postgres", "SELECT pg_current_wal_flush_lsn()"
 
 # Remember ptrack init_lsn
 my $init_lsn = $node->safe_psql("postgres", "SELECT ptrack_init_lsn()");
-unlike(
+like(
 	$init_lsn,
-	qr/0\/0/,
+	qr/0\/[0-9][0-9]+/,
 	'ptrack init LSN should not be 0/0 after CHECKPOINT');
 
 # Ptrack map should survive crash
@@ -161,9 +161,9 @@ $node->restart;
 
 $node->safe_psql("postgres", "CHECKPOINT");
 $res_stdout = $node->safe_psql("postgres", "SELECT ptrack_init_lsn()");
-unlike(
+like(
 	$res_stdout,
-	qr/0\/0/,
+	qr/0\/[0-9][0-9]+/,
 	'ptrack init LSN should not be 0/0 after CHECKPOINT');
 ok($res_stdout ne $init_lsn, 'ptrack init_lsn should not be the same after map resize');
 $res_stdout = $node->safe_psql("postgres", "SELECT ptrack_get_pagemapset('$flush_lsn')");
