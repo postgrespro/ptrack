@@ -14,12 +14,9 @@ jobs:
   Test:
     strategy:
       matrix:
-        # pg_version: [15]
-        pg_version: [11, 12, 13, 14, 15]
+        pg_version: [13, 14, 15, 16, 17, 18]
         os: [ubuntu-22.04]
-        # tests: [tap]
         tests: [tap, python]
-        # test_mode: [normal, legacy, paranoia]
         test_mode: [normal, paranoia]
         exclude:
           - tests: tap
@@ -56,6 +53,11 @@ jobs:
       - name: Apply ptrack patches
         run: make patch top_builddir=../postgres
         working-directory: ptrack
+      - name: Apply probackup patch
+        if: ${{ matrix.pg_version == '18' }}
+        run: git apply ../pg_probackup/patches/REL_18_STABLE_pg_probackup.patch
+        working-directory: postgres
+        shell: bash {0}
       - name: Install Postgres
         run: |
           make install-postgres top_builddir=$GITHUB_WORKSPACE/postgres prefix=$HOME/pgsql &&
