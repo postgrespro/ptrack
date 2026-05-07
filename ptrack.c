@@ -221,7 +221,7 @@ ptrack_copydir_hook(const char *path)
 	}
 	else if (strstr(path, "pg_tblspc/") == path)
 	{
-		char	   *dbPos;
+		const char	   *dbPos;
 
 		oidchars = strspn(path + 10, "0123456789");
 		strncpy(oidbuf, path + 10, oidchars);
