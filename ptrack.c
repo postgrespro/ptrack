@@ -25,6 +25,10 @@
 
 #include "postgres.h"
 
+#if PG_VERSION_NUM >= 190000
+#include <dirent.h>
+#endif
+
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -45,6 +49,10 @@
 #endif
 #include "storage/smgr.h"
 #include "storage/reinit.h"
+#if PG_VERSION_NUM >= 190000
+#include "storage/fd.h"
+#include "storage/shmem.h"
+#endif
 #include "utils/builtins.h"
 #include "utils/guc.h"
 #include "utils/pg_lsn.h"
