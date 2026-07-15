@@ -264,7 +264,7 @@ ptrack_mdextend_hook(RelFileNodeBackend smgr_rnode,
 }
 
 static void
-ptrack_ProcessSyncRequests_hook()
+ptrack_ProcessSyncRequests_hook(void)
 {
 	ptrackCheckpoint();
 
