@@ -569,6 +569,9 @@ ptrack_get_pagemapset(PG_FUNCTION_ARGS)
 		TupleDescInitEntry(tupdesc, (AttrNumber) 1, "path", TEXTOID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 2, "pagecount", INT8OID, -1, 0);
 		TupleDescInitEntry(tupdesc, (AttrNumber) 3, "pagemap", BYTEAOID, -1, 0);
+#if PG_VERSION_NUM >= 190000
+		TupleDescFinalize(tupdesc);
+#endif
 		funcctx->tuple_desc = BlessTupleDesc(tupdesc);
 
 		funcctx->user_fctx = ctx;
